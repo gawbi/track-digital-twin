@@ -14,6 +14,7 @@ Ubuntu · RTX 5070 · Isaac Sim 5.1을 대상으로 트랙, 4륜 스키드 스�
 - [녹음·이미지 규칙 대조](docs/mission_rules.md): 분홍선 이전 실행, 중복 감점, 안쪽 횡단보도, 신호·방향 규칙
 - [녹음 전사와 정리](docs/recording/README.md): 시간 표시 전사, 불명확한 구간, 자료별 근거
 - [차량·카메라 설정](configs/rtx.json): 실측값과 추정값의 출처, 난수화 범위
+- [미션 제어 통합](docs/autonomy.md): ONNX 검출·추적·거리 추정·교차로 제어·완료 집계
 
 ```bash
 export ISAAC_PY="$HOME/isaacsim/python.sh"
@@ -23,8 +24,9 @@ export ISAAC_PY="$HOME/isaacsim/python.sh"
 "$ISAAC_PY" run_sim.py --mode expert --duration 90 --record
 ```
 
-현재 주행 실행기는 차선 주행까지 연결합니다. 미션 상태기계와 검출기 학습 코드는 분리되어 있으며,
-거리 추정·교차로 경로 전환과의 통합은 RTX 실행과 실차 보정이 필요합니다.
+차선 주행에 더해 `--missions --detector ...`로 검출·추적·거리 추정·교차로 제어를 연결합니다.
+미션 제어는 RGB, 측정 바퀴 속도와 트랙 지도를 사용하며 시뮬레이터 위치/bbox 정답은 사용하지 않습니다.
+차선/검출 가중치 학습과 카메라·바퀴 보정, RTX에서의 실제 주행 검증은 별도로 진행해야 합니다.
 코드·USD 구조 검사는 수행하지만 실제 RTX 렌더링·PhysX 주행과 학습된 모델의 강건성을 검증한 상태는 아닙니다.
 원본 녹음, 사람이 나온 사진, 교재 코드와 학습 결과물은 공개 저장소에 포함하지 않습니다.
 

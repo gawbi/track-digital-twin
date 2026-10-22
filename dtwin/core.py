@@ -40,8 +40,34 @@ def load_inputs(config_path=None):
         raise ValueError("Invalid camera parameters")
     spots = {p["id"] for p in layout["prop_spots"]}
     for p in cfg["props"]:
-        if p["spot"] not in spots or p["kind"] not in {"speed20", "stop", "horn", "signal"}:
+        if p["spot"] not in spots or p["kind"] not in {
+            "speed20",
+            "stop",
+            "horn",
+            "signal",
+            "direction_left",
+            "direction_right",
+            "direction_straight",
+        }:
             raise ValueError(f"Invalid prop: {p}")
+    m = cfg.get("missions")
+    if m is not None:
+        if not 0 < m["confidence"] <= 1 or m["min_track_hits"] < 2:
+            raise ValueError("Invalid mission confidence/track confirmation settings")
+        if any(
+            m[k] <= 0
+            for k in [
+                "max_frame_age_s",
+                "braking_m_s2",
+                "junction_timeout_s",
+                "junction_speed_m_s",
+                "stop_dwell_s",
+                "red_dwell_s",
+            ]
+        ):
+            raise ValueError("Mission times, speeds and braking must be positive")
+        if m["yellow_behavior"] not in {"stop", "follow_lane"} or not 0 < m["slowdown_scale"] <= 1:
+            raise ValueError("Invalid yellow behavior or slowdown scale")
     return cfg, layout
 
 

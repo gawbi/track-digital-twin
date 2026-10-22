@@ -116,10 +116,17 @@ def make_sign_textures(folder):
                 return ImageFont.truetype(candidate, size)
         return ImageFont.load_default(size=size)
 
-    for name in ["speed20", "stop", "horn"]:
+    for name in [
+        "speed20",
+        "stop",
+        "horn",
+        "direction_left",
+        "direction_right",
+        "direction_straight",
+    ]:
         image = Image.new("RGB", (256, 256), "#eeeeec")
         draw = ImageDraw.Draw(image)
-        color = "#a82d25" if name != "horn" else "#123b79"
+        color = "#a82d25" if name in {"speed20", "stop"} else "#123b79"
         draw.ellipse((12, 12, 244, 244), fill=color)
         draw.ellipse((21, 21, 235, 235), outline="white", width=4)
         if name == "speed20":
@@ -127,7 +134,7 @@ def make_sign_textures(folder):
             draw.text((128, 128), "20", fill="#182327", font=font(94), anchor="mm")
         elif name == "stop":
             draw.text((128, 128), "STOP", fill="white", font=font(66), anchor="mm")
-        else:
+        elif name == "horn":
             draw.polygon(
                 [(48, 92), (88, 115), (173, 115), (173, 133), (88, 133), (48, 157)], fill="white"
             )
@@ -144,6 +151,22 @@ def make_sign_textures(folder):
                 fill="white",
                 width=13,
             )
+        else:
+            # Distinct direction classes; these do not mean "always turn right".
+            points = [
+                (109, 202),
+                (147, 202),
+                (147, 112),
+                (184, 112),
+                (128, 52),
+                (72, 112),
+                (109, 112),
+            ]
+            if name == "direction_right":
+                points = [(256 - y, x) for x, y in points]
+            elif name == "direction_left":
+                points = [(y, 256 - x) for x, y in points]
+            draw.polygon(points, fill="white")
         image.save(folder / f"{name}.png")
     return folder
 

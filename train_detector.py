@@ -2,6 +2,7 @@
 """Optional small detector training in a separate CUDA environment, outside Isaac."""
 
 import argparse
+import json
 from pathlib import Path
 
 
@@ -16,6 +17,8 @@ def main():
     from ultralytics import YOLO
 
     model = YOLO(a.model)
+    if getattr(model.model, "end2end", False):
+        p.error("The runtime adapter supports YOLO11 raw detection exports; use --model yolo11n.pt")
     model.train(
         data=str(a.data),
         epochs=a.epochs,
@@ -36,7 +39,26 @@ def main():
         exist_ok=False,
     )
     model.val(data=str(a.data), split="test", device=a.device)
-    model.export(format="onnx", imgsz=640, dynamic=False, simplify=False, nms=False)
+    exported = Path(
+        model.export(format="onnx", imgsz=640, dynamic=False, simplify=False, nms=False, opset=17)
+    )
+    classes = [model.names[i] for i in range(len(model.names))]
+    split_path = a.data.parent / "split.json"
+    scenes = json.loads(split_path.read_text())["groups"] if split_path.exists() else {}
+    exported.with_suffix(".json").write_text(
+        json.dumps(
+            {
+                "format": "yolo11_raw_xywh_classes",
+                "classes": classes,
+                "input": "uint8 RGB -> letterbox 640 -> NCHW float32 /255",
+                "nms": False,
+                "training_scene_seeds": sorted(
+                    {str(seed) for seeds in scenes.values() for seed in seeds}
+                ),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

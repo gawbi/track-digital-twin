@@ -19,23 +19,32 @@ def main():
     p.add_argument("--policy", type=Path)
     p.add_argument("--stress", action="store_true")
     p.add_argument("--route", choices=["outer", "inner"], default="outer")
+    p.add_argument("--missions", action="store_true")
+    p.add_argument("--detector", type=Path)
+    p.add_argument("--calibration", type=Path)
     a = p.parse_args()
     if a.mode == "evaluate" and not a.policy:
         p.error("evaluate requires --policy")
+    if a.missions and (a.mode != "evaluate" or not a.detector):
+        p.error("--missions requires --mode evaluate --detector ...")
     if a.count <= 0:
         p.error("count must be positive")
     first = a.seed_start if a.seed_start is not None else (1000 if a.mode == "collect" else 9000)
     if a.mode == "evaluate":
         metadata = json.loads(a.policy.with_suffix(".json").read_text())
         used = set(str(seed) for groups in metadata["splits"].values() for seed in groups)
+        if a.missions:
+            detector_meta = json.loads(a.detector.with_suffix(".json").read_text())
+            used |= set(str(seed) for seed in detector_meta.get("training_scene_seeds", []))
         if any(str(seed) in used for seed in range(first, first + a.count)):
             p.error("Evaluation seeds overlap training, validation or offline test scenes")
     a.output.mkdir(parents=True, exist_ok=True)
     sim_mode = "expert" if a.mode == "collect" else "onnx"
+    suffix = "-missions" if a.missions else ""
     existing = [
-        a.output / f"{sim_mode}-{a.route}-seed{seed}"
+        a.output / f"{sim_mode}-{a.route}-seed{seed}{suffix}"
         for seed in range(first, first + a.count)
-        if (a.output / f"{sim_mode}-{a.route}-seed{seed}").exists()
+        if (a.output / f"{sim_mode}-{a.route}-seed{seed}{suffix}").exists()
     ]
     if existing:
         p.error(
@@ -65,6 +74,10 @@ def main():
             command += ["--policy", str(a.policy.resolve())]
         if a.stress:
             command.append("--stress")
+        if a.missions:
+            command += ["--missions", "--detector", str(a.detector.resolve())]
+            if a.calibration:
+                command += ["--calibration", str(a.calibration.resolve())]
         with (a.output / f"process-seed{seed}.log").open("w") as log:
             try:
                 result = subprocess.run(

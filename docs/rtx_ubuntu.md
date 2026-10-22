@@ -119,13 +119,13 @@ python make_detector_dataset.py outputs/train --output datasets/signs
 python train_detector.py datasets/signs/data.yaml --batch-size 8 --device 0
 ```
 
-클래스는 경적, STOP, 감속20, 빨강/노랑/초록 신호다. 렌더러의 보이는 표면 bbox로 YOLO 라벨을 생성한다.
+클래스는 경적, STOP, 감속20, 빨강/노랑/초록 신호, 좌/우/직진의 9종이다. 렌더러의 보이는 표면 bbox로 YOLO 라벨을 생성한다.
 학습 데이터에 클래스가 빠져 있으면 소품 배치·경로·카메라 각도를 바꾸어 더 수집한다.
 절차적 표지판과 사진의 종이 주름·반사·배경 차이가 있으므로, 실차 카메라에서 촬영하고 라벨링한 영상도 섞어야 한다.
 임의 사진 한 장으로 검출 성능을 보장할 수 없다. 학습 API는 [Ultralytics 공식 문서](https://docs.ultralytics.com/modes/train/)를 따른다.
 
-검출·차선 모델과 [미션 상태기계](mission_rules.md)는 별개다. 현재 실행기는 차선 주행 평가까지 연결되어 있다.
-추적 ID, 분홍선/횡단보도 거리 추정, 교차로 방향 계획을 보정한 뒤 미션 제어에 연결해야 한다.
+검출·차선 모델과 미션 상태기계는 `--missions --detector ...`로 연결한다.
+[미션 제어 통합 안내](autonomy.md)에 실행 명령, 추적·거리·교차로 제어, 카메라/바퀴 보정과 성공 집계를 정리했다.
 
 ## 8. 기존 8_4.py 연결
 
@@ -142,6 +142,6 @@ TensorFlow는 이 모드에서만 필요하며 Isaac Python 3.11과 호환되는
 
 ## 9. 검증 범위
 
-현재 개발 환경에서 치수·기하·카메라 좌표·전처리·데이터 분리·규칙 상태기계와 USD 구조를 검사한다.
+현재 개발 환경에서 치수·기하·카메라 좌표·전처리·데이터 분리·USD 구조와 검출→추적→거리→미션 주행 통합을 검사한다.
 **Ubuntu RTX 5070에서 Isaac Sim 5.1 실제 렌더링, PhysX 접촉/주행, 완주율, GPU 메모리 및 학습 품질은 아직 검증하지 않았다.**
 RTX에서 처음 실행할 때 `--check`, 수동 주행, 교사 주행의 결과와 `summary.json`부터 확인한다.

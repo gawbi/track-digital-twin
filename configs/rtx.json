@@ -7,7 +7,8 @@
     "wheel_radius_m": "추정: TT 타이어 지름 65mm, 실측 필요",
     "wheelbase_m": "추정: 앞뒤 축간 14cm, 실측 필요",
     "mass_kg": "추정: 실차 무게와 모터 토크 실측 필요",
-    "camera": "추정: 렌즈 높이·각도·화각은 실차 보정 전 임시값"
+    "camera": "추정: 렌즈 높이·각도·화각은 실차 보정 전 임시값",
+    "mission_defaults": "추정: STOP 1초, 감속배율 0.5, 경적 0.2초 및 제동·회전 설정은 현장 규칙/실측 보정 필요. 빨간 신호 약 1초는 녹음/캡처 근거"
   },
   "vehicle": {
     "length_m": 0.25, "body_width_m": 0.10, "body_height_m": 0.025,
@@ -36,10 +37,32 @@
     "image_gain": [0.8, 1.2], "image_noise_std": [0.0, 5.0],
     "latency_frames": [0, 2]
   },
+  "missions": {
+    "sign_bottom_m": 0.103, "signal_bottom_m": 0.075,
+    "required_missions": ["horn", "stop", "speed20", "signal"],
+    "evaluation_gates": {
+      "outer": [[0, 0.8725], [0.8625, 0], [0, -0.8725], [-0.8625, 0], [0, 0.8725]],
+      "inner": [[0, 0.8725], [0, 0], [-0.8625, 0], [0, -0.8725], [0.8625, 0], [0, 0.8725]]
+    },
+    "confidence": 0.7, "min_track_hits": 3, "track_max_age_s": 0.7,
+    "encounter_merge_m": 0.16, "revisit_distance_m": 0.8,
+    "max_frame_age_s": 0.2, "observation_memory_s": 1.5, "mark_memory_s": 2.0,
+    "max_mark_distance_m": 1.1, "max_sign_distance_m": 0.9, "map_match_m": 0.12,
+    "pink_margin_m": 0.02, "stop_dwell_s": 1.0, "red_dwell_s": 1.0,
+    "slowdown_scale": 0.5, "braking_m_s2": 0.3, "horn_duration_s": 0.2,
+    "yellow_behavior": "stop", "stopped_speed_m_s": 0.015,
+    "junction_approach_m": 0.45, "junction_wait_m": 0.07,
+    "junction_center_tolerance_m": 0.025, "junction_speed_m_s": 0.08,
+    "junction_exit_m": 0.30, "junction_clear_m": 0.35,
+    "junction_timeout_s": 40.0, "turn_yaw_rad_s": 0.8, "turn_tolerance_rad": 0.05
+  },
   "props": [
     {"id": "speed20", "kind": "speed20", "spot": "block-NW-NW", "yaw_deg": 180},
     {"id": "stop", "kind": "stop", "spot": "block-NE-NE", "yaw_deg": 180},
     {"id": "horn", "kind": "horn", "spot": "block-SE-SE", "yaw_deg": 0},
-    {"id": "signal", "kind": "signal", "spot": "block-SW-SE", "yaw_deg": 180}
+    {"id": "signal", "kind": "signal", "spot": "block-SW-NE", "yaw_deg": 180},
+    {"id": "direction_north", "kind": "direction_straight", "spot": "block-NW-NE", "yaw_deg": -90},
+    {"id": "direction_center", "kind": "direction_right", "spot": "block-NW-SE", "yaw_deg": -90},
+    {"id": "direction_south", "kind": "direction_left", "spot": "block-SW-SE", "yaw_deg": -90}
   ]
 }

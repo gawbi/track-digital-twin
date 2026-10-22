@@ -23,6 +23,7 @@ def main():
                     "status": "missing_summary",
                     "success": False,
                     "mode": "onnx" if directory.name.startswith("onnx-") else "unknown",
+                    "mission_enabled": directory.name.endswith("-missions"),
                 }
             )
     if not rows:
@@ -32,16 +33,34 @@ def main():
     ]
     if len(policies) != len(rows):
         p.error("Teacher runs are present. Evaluate camera-only ONNX runs separately.")
+    mission_flags = {bool(r.get("mission_enabled")) for r in rows}
+    if len(mission_flags) != 1:
+        p.error("Lane-only and mission-controlled runs must be evaluated separately")
+    missions = True in mission_flags
     report = {
         "episodes": len(rows),
-        "successful_laps_without_offroad": sum(bool(r.get("success")) for r in rows),
+        "successful_episodes": sum(bool(r.get("success")) for r in rows),
         "success_rate": sum(bool(r.get("success")) for r in rows) / len(rows),
         "statuses": {s: sum(r["status"] == s for r in rows) for s in {r["status"] for r in rows}},
         "minimum_clearance_m": min(
             (r["min_clearance_m"] for r in rows if "min_clearance_m" in r), default=None
         ),
-        "scope": "lane following only; does not establish sign/signal mission performance",
+        "scope": (
+            "lane + configured required missions; RGB/wheel odometry/map control"
+            if missions
+            else "lane following only; does not establish sign/signal mission performance"
+        ),
     }
+    if missions:
+        report["mission_completions"] = {
+            kind: sum(r.get("mission_counts", {}).get(kind, 0) for r in rows)
+            for kind in ["horn", "stop", "speed20", "signal"]
+        }
+        report["mission_faults"] = {
+            fault: sum(r.get("mission_fault") == fault for r in rows)
+            for fault in {r.get("mission_fault") for r in rows}
+            if fault is not None
+        }
     print(json.dumps(report, indent=2))
     (a.runs / "evaluation.json").write_text(json.dumps(report, indent=2))
 

@@ -93,6 +93,8 @@ class Simulator:
             )
         self.frame = 0
         self.delay.clear()
+        self._encoder = None
+        self.last_capture_time_s = 0.0
 
     def _road_mask(self):
         from PIL import Image, ImageDraw
@@ -185,9 +187,40 @@ class Simulator:
             255,
         ).astype(np.uint8)
         # Delayed RGB and renderer boxes must refer to the SAME captured frame.
-        self.delay.append((frame, self.detections()))
+        self.delay.append((frame, self.detections(), self.frame * self.dt))
         self.last_boxes = self.delay[0][1]
+        self.last_capture_time_s = self.delay[0][2]
         return self.delay[0][0].copy()
+
+    def wheel_measurement(self):
+        """Encoder-like angular velocities in rad/s, not target drive velocities."""
+        if not self.legacy:
+            raise RuntimeError(
+                "Mission encoder adapter targets Isaac Sim 5.1; 6.x is not validated"
+            )
+        if self._encoder is None:
+            from isaacsim.core.prims import SingleArticulation
+
+            self._encoder = SingleArticulation(
+                prim_path=self.objects["body_path"],
+                name="mission_encoders",
+                reset_xform_properties=False,
+            )
+            self._encoder.initialize()
+            self._encoder_indices = [
+                self._encoder.get_dof_index(side + "_" + axle)
+                for side in ["left", "right"]
+                for axle in ["front", "rear"]
+            ]
+        values = np.asarray(self._encoder.get_joint_velocities(joint_indices=self._encoder_indices))
+        if values.shape != (4,) or not np.isfinite(values).all():
+            raise RuntimeError("Missing/nonfinite wheel encoder measurements")
+        return float(values[:2].mean()), float(values[2:].mean())
+
+    def horn(self, duration_s):
+        # Headless-friendly simulated horn actuator: event is recorded by the caller.
+        # A physical buzzer/audio device can be connected to the same one-shot output.
+        print(f"\a[HORN] simulated duration={duration_s:.2f}s", flush=True)
 
     def pose(self):
         from pxr import UsdGeom

@@ -32,6 +32,19 @@ def parser():
         help="External course 8_4.py; never copied into this repository",
     )
     p.add_argument("--legacy-model", type=Path)
+    p.add_argument(
+        "--missions",
+        action="store_true",
+        help="Vision detector + wheel encoders + map mission control (ONNX mode)",
+    )
+    p.add_argument(
+        "--detector", type=Path, help="YOLO11 raw ONNX detector with matching .json metadata"
+    )
+    p.add_argument(
+        "--calibration",
+        type=Path,
+        help="Measured camera JSON; defaults to nominal config, not randomized truth",
+    )
     return p
 
 
@@ -39,7 +52,7 @@ def route_points(layout, name):
     outer = layout["centerlines"]["outer_loop_clockwise"]
     if name == "outer":
         return outer
-    # Follow northern centerline to central junction, turn right/east,
+    # Follow northern centerline to central junction, turn east,
     # join east outer road then complete the outer loop back to north midpoint.
     east = max(p[0] for p in outer)
     idx = min(range(len(outer)), key=lambda i: math.dist(outer[i], (east, 0)))
@@ -87,6 +100,16 @@ def main():
         raise SystemExit("Headless manual mode has no input: choose --mode expert or --mode onnx")
     if args.mode == "onnx" and not args.policy:
         raise SystemExit("--mode onnx requires --policy")
+    if args.missions and (args.mode != "onnx" or not args.detector or args.legacy_script):
+        raise SystemExit(
+            "--missions requires --mode onnx --policy ... --detector ... and excludes the legacy bridge"
+        )
+    if args.missions and "missions" not in base:
+        raise SystemExit("Missing missions settings; start with configs/rtx.json")
+    if args.missions:
+        for path in [args.policy, args.detector]:
+            if not path.is_file() or not path.with_suffix(".json").is_file():
+                raise SystemExit(f"Model or export metadata is missing: {path}")
     if args.legacy_script and (not args.legacy_model or args.headless):
         raise SystemExit("Legacy course script requires --legacy-model and GUI (OpenCV windows)")
     if args.legacy_script and not (args.legacy_script.is_file() and args.legacy_model.is_file()):
@@ -99,7 +122,8 @@ def main():
             raise SystemExit("--duration must be positive")
         cfg["simulation"]["duration_s"] = args.duration
     # An episode directory is never overwritten, including failed runs.
-    output = args.output / f"{args.mode}-{args.route}-seed{args.seed}"
+    suffix = "-missions" if args.missions else ""
+    output = args.output / f"{args.mode}-{args.route}-seed{args.seed}{suffix}"
     output.mkdir(parents=True, exist_ok=False)
     from isaacsim import SimulationApp
 
@@ -111,8 +135,14 @@ def main():
             "height": cfg["simulation"]["render_height"],
         }
     )
-    sim = recorder = None
-    summary = {"seed": args.seed, "mode": args.mode, "route": args.route, "status": "initializing"}
+    sim = recorder = mission_driver = None
+    summary = {
+        "seed": args.seed,
+        "mode": args.mode,
+        "route": args.route,
+        "status": "initializing",
+        "mission_enabled": args.missions,
+    }
     try:
         import cv2
 
@@ -126,6 +156,12 @@ def main():
             simcfg["max_yaw_rad_s"],
         )
         progress = Progress(follower.total_length)
+        mission_gates = None
+        if args.missions:
+            from dtwin.evaluation import GateCounter
+
+            mission_gates = GateCounter(base["missions"]["evaluation_gates"][args.route])
+            summary["evaluation_gates"] = base["missions"]["evaluation_gates"][args.route]
         sim = Simulator(app, cfg, layout, params, follower, output)
         sim.save_stage()
         if args.legacy_script:
@@ -138,6 +174,25 @@ def main():
             from dtwin.policy import OnnxPolicy
 
             policy = OnnxPolicy(args.policy)
+        mission_driver = None
+        if args.missions:
+            from dtwin.autonomy import MissionDriver
+            from dtwin.perception import OnnxDetector
+
+            # The initial pose is a configured starting prior. Do not pass sim.pose()
+            # or sampled camera randomization into the perception/control pipeline.
+            nominal_route = route_points(layout, args.route)
+            first, second = nominal_route[:2]
+            initial_pose = (*first, math.atan2(second[1] - first[1], second[0] - first[0]))
+            calibration = (
+                json.loads(args.calibration.read_text()) if args.calibration else base["camera"]
+            )
+            mission_driver = MissionDriver(
+                base, layout, initial_pose, OnnxDetector(args.detector), calibration
+            )
+            summary["control_sources"] = (
+                "RGB detector + measured wheel joints + configured map/start; no simulator pose or labels"
+            )
         recorder = Recorder(output, cfg, params, args.mode, args.route, args.record)
         command = (0.0, 0.0)
         off_frames = 0
@@ -154,7 +209,8 @@ def main():
             footprint = sim.footprint()
             clearances.append(footprint["min_clearance_m"])
             route_errors.append(route_info["route_distance_m"])
-            laps = progress.update(route_info["route_s_m"])
+            reference_laps = progress.update(route_info["route_s_m"])
+            laps = mission_gates.update(*pose[:2]) if mission_gates else reference_laps
             key = -1
             if not args.headless:
                 cv2.imshow("Digital twin camera (RGB -> BGR)", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
@@ -186,6 +242,14 @@ def main():
                 summary["offroad_frames"] += 1
             else:
                 off_frames = 0
+            mission_info = None
+            if mission_driver:
+                left, right = sim.wheel_measurement()
+                command, horn, mission_info = mission_driver.step(
+                    rgb, sim.frame * sim.dt, sim.last_capture_time_s, left, right, command
+                )
+                if horn:
+                    sim.horn(base["missions"]["horn_duration_s"])
             record = dict(
                 frame=sim.frame,
                 time_s=sim.frame * sim.dt,
@@ -196,6 +260,8 @@ def main():
                 **footprint,
                 **route_info,
             )
+            if mission_info is not None:
+                record["autonomy"] = mission_info
             recorder.write(record, rgb)
             summary["laps"] = laps
             if off_frames * sim.dt >= simcfg["off_track_grace_s"]:
@@ -209,16 +275,42 @@ def main():
             )
         summary.update(
             frames=sim.frame,
-            distance_m=progress.distance,
+            distance_m=mission_gates.distance if mission_gates else progress.distance,
             min_clearance_m=min(clearances, default=0),
             mean_route_error_m=sum(route_errors) / max(1, len(route_errors)),
             policy_uses_ground_truth=(args.mode == "expert"),
             success=(summary["laps"] >= 1 and summary["offroad_frames"] == 0),
         )
+        if mission_driver:
+            completed = [e for e in mission_driver.events if e["event"] == "mission_completed"]
+            counts = {
+                kind: sum(e["kind"] == kind for e in completed)
+                for kind in ["horn", "stop", "speed20", "signal"]
+            }
+            summary.update(
+                lane_success=summary["success"],
+                mission_counts=counts,
+                mission_fault=mission_driver.last_guard,
+                mission_navigation_phase=mission_driver.navigator.phase,
+                required_missions=base["missions"]["required_missions"],
+            )
+            summary["success"] = (
+                summary["lane_success"]
+                and not mission_driver.last_guard
+                and mission_driver.navigator.phase == "lane"
+                and all(counts[kind] > 0 for kind in base["missions"]["required_missions"])
+            )
+            (output / "mission_events.json").write_text(
+                json.dumps(mission_driver.events, ensure_ascii=False, indent=2)
+            )
     except Exception as error:
         summary.update(status="error", error=repr(error))
         raise
     finally:
+        if mission_driver:
+            (output / "mission_events.json").write_text(
+                json.dumps(mission_driver.events, ensure_ascii=False, indent=2)
+            )
         if recorder:
             recorder.close(summary)
         else:

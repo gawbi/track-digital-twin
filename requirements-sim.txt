@@ -1,4 +1,5 @@
 # Install using Isaac Sim 5.1's python.sh. Preserve bundled numpy/torch versions.
-Pillow>=10,<13
-opencv-python>=4.8,<5
+Pillow>=10.1,<13
+# OpenCV 4.12+ requires numpy 2.x; preserve Isaac Sim 5.1's bundled numpy.
+opencv-python>=4.8,<4.12
 onnxruntime>=1.18,<2

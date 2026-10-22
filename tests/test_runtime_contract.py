@@ -8,11 +8,20 @@ from dtwin.runtime import Simulator
 
 
 class RuntimeContractTests(TestCase):
+    def test_wheel_odometry_uses_measured_joints_instead_of_drive_targets(self):
+        sim = Simulator.__new__(Simulator)
+        sim.legacy = True
+        sim._encoder = Mock()
+        sim._encoder_indices = [0, 1, 2, 3]
+        sim._encoder.get_joint_velocities.return_value = np.array([2.0, 4.0, 6.0, 8.0])
+        self.assertEqual(sim.wheel_measurement(), (3.0, 7.0))
+
     def test_delayed_pixels_keep_their_original_detection_labels(self):
         sim = Simulator.__new__(Simulator)
         sim.params = {"image_gain": 1, "image_noise_std": 0}
         sim.rng = np.random.default_rng(1)
         sim.delay = deque(maxlen=2)
+        sim.frame, sim.dt = 0, 1 / 30
         sim.raw_rgb = Mock(
             side_effect=[
                 np.full((2, 2, 3), 20, dtype=np.uint8),

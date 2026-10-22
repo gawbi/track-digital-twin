@@ -17,6 +17,7 @@ class Observation:
     stop_distance_m: float | None = None
     direction: str | None = None  # left / right / straight
     source: str = "vision"
+    junction_id: str | None = None
 
 
 @dataclass
@@ -26,6 +27,9 @@ class MissionOutput:
     horn: bool = False
     direction: str | None = None
     events: list = field(default_factory=list)
+    speed_limit_m_s: float | None = None
+    direction_encounter_id: str | None = None
+    direction_priority: int = 0
 
 
 class MissionController:
@@ -37,6 +41,7 @@ class MissionController:
         stop_tolerance_m=0.035,
         confidence=0.7,
         allow_oracle=False,
+        braking_m_s2=0.3,
     ):
         # STOP dwell and reduction ratio are provisional, not confirmed course rules.
         self.stop_dwell_s, self.red_dwell_s = stop_dwell_s, red_dwell_s
@@ -46,13 +51,16 @@ class MissionController:
         self.holding = None
         self.started = None
         self.speed_scale = 1.0
+        self.braking = braking_m_s2
 
-    def update(self, now_s, speed_m_s, observations):
+    def update(self, now_s, speed_m_s, observations, yaw_rate_rad_s=0.0):
+        if not self.allow_oracle and any(obs.source != "vision" for obs in observations):
+            raise ValueError("Ground-truth mission observations are forbidden in vision evaluation")
         result = MissionOutput(speed_scale=self.speed_scale)
         if self.holding:
             encounter, kind = self.holding
             # The dwell begins only once the vehicle has actually stopped.
-            if abs(speed_m_s) > 0.015:
+            if abs(speed_m_s) > 0.015 or abs(yaw_rate_rad_s) > 0.08:
                 self.started = None
             elif self.started is None:
                 self.started = now_s
@@ -65,21 +73,23 @@ class MissionController:
             result.events.append({"event": "stop_completed", "id": encounter, "time_s": now_s})
             if kind == "signal":
                 result.direction = "right"
+                result.direction_encounter_id = encounter
+                result.direction_priority = 2
                 return result
         for obs in observations:
-            if obs.source != "vision" and not self.allow_oracle:
-                raise ValueError(
-                    "Ground-truth mission observations are forbidden in vision evaluation"
-                )
             if obs.confidence < self.confidence or obs.encounter_id in self.done:
                 continue
             if obs.kind == "direction":
-                if obs.direction in {"left", "right", "straight"}:
+                if obs.direction in {"left", "right", "straight"} and result.direction_priority < 2:
                     result.direction = obs.direction
+                    result.direction_encounter_id = obs.encounter_id
+                    result.direction_priority = 1
                 continue
             if obs.kind == "signal":
                 if obs.signal_color == "green":
                     result.direction = "right"
+                    result.direction_encounter_id = obs.encounter_id
+                    result.direction_priority = 2
                     self.done.add(obs.encounter_id)
                 elif (
                     obs.signal_color == "red"
@@ -96,10 +106,19 @@ class MissionController:
                     result.events.append(
                         {"event": "stop_line_already_passed", "id": obs.encounter_id}
                     )
+                    result.stop = True
                 # Yellow behavior was not specified; report, do not invent a rule.
                 elif obs.signal_color == "yellow":
                     result.events.append(
                         {"event": "unconfirmed_yellow_rule", "id": obs.encounter_id}
+                    )
+                if obs.signal_color == "red" and obs.stop_distance_m is not None:
+                    remaining = max(0.0, obs.stop_distance_m - self.stop_tolerance_m)
+                    limit = (2 * self.braking * remaining) ** 0.5
+                    result.speed_limit_m_s = (
+                        min(result.speed_limit_m_s, limit)
+                        if result.speed_limit_m_s is not None
+                        else limit
                     )
                 continue
             if obs.kind not in {"horn", "stop", "speed20"}:

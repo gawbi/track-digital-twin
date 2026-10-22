@@ -103,6 +103,10 @@ class MissionTests(unittest.TestCase):
     def test_oracle_cannot_be_passed_off_as_vision(self):
         with self.assertRaises(ValueError):
             MissionController().update(0, 0, [Observation("s", "stop", source="oracle")])
+        controller = MissionController()
+        controller.update(0, 0, [Observation("v", "stop", before_pink_line=True)])
+        with self.assertRaises(ValueError):
+            controller.update(0.1, 0, [Observation("s", "stop", source="oracle")])
 
 
 if __name__ == "__main__":

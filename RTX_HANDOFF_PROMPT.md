@@ -31,10 +31,11 @@ cd track-digital-twin
 다음 순서로 읽고 기존 구현을 바탕으로 진행합니다.
 
 1. [README.md](README.md)
-2. [Ubuntu 실행·학습 절차](docs/rtx_ubuntu.md)
-3. [미션 제어·카메라/바퀴 보정](docs/autonomy.md)
-4. [녹음과 이미지에서 확인한 규칙](docs/mission_rules.md), [전사·요약](docs/recording/README.md)
-5. [기존 검증 기록](docs/validation.md), [차량·장면 설정](configs/rtx.json)
+2. [보유 장비로 진행할 후속 구현 요구사항](docs/real_vehicle_plan.md)
+3. [Ubuntu 실행·학습 절차](docs/rtx_ubuntu.md)
+4. [미션 제어·카메라/바퀴 보정](docs/autonomy.md)
+5. [녹음과 이미지에서 확인한 규칙](docs/mission_rules.md), [전사·요약](docs/recording/README.md)
+6. [기존 검증 기록](docs/validation.md), [차량·장면 설정](configs/rtx.json)
 
 [기존 인계 문서](HANDOFF_PROMPT.md)에는 치수와 측정 출처가 있습니다.
 트랙은 흰 테두리 포함 **2.355 × 2.4m**, 텍스처는 **2355 × 2400px**입니다.
@@ -45,6 +46,13 @@ cd track-digital-twin
 개발 기기에서 단위·통합 검사 37개와 작은 생성 데이터 학습 경로 검사를 통과했습니다.
 **실제 RTX 렌더링·PhysX 주행, 주행용 가중치 학습과 강건성 평가는 아직 수행하지 않았습니다.**
 학습된 가중치는 저장소에 없습니다. 소프트웨어 검사 통과를 주행 성공으로 보고하지 않습니다.
+
+사용자가 후속 구현으로 **실제 데이터 수집·세션 분리, 실제 데이터 미세조정, 실차 추론/제어 분리,
+라즈베리파이 지연·주행 측정**을 지정했습니다. [후속 구현 요구사항](docs/real_vehicle_plan.md)의 순서와
+완료 기준을 따릅니다. 이 네 항목은 현재 미구현이며 기존 시뮬레이션 기능과 구분합니다.
+RTX에서 개발·학습하고 보유 Raspberry Pi 5에서 추론·제어하며, 추가 장비 구매를 전제로 삼지 않습니다.
+모델·임계값은 실제 validation으로 선택하고 test는 최종 평가에 남겨 둡니다.
+엔코더 유무와 기존 각도/새 속도 출력의 차이를 확인한 뒤 실제 데이터·실차 어댑터를 연결합니다.
 
 ## 첫 작업: 환경 기록과 실제 시뮬레이션 확인
 

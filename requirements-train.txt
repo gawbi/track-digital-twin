@@ -1,0 +1,8 @@
+# Use a SEPARATE environment; install RTX 5070-compatible CUDA PyTorch first.
+numpy>=1.26,<3
+Pillow>=10,<13
+opencv-python>=4.8,<5
+onnx>=1.16,<2
+onnxruntime>=1.18,<2
+ultralytics>=8.3,<9
+ruff>=0.12,<1

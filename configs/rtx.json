@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "vehicle_length_m": "측정: 차량치수 사진, 약 25cm",
+    "body_width_m": "측정: 약 10cm; 바퀴 포함 전체 폭 16cm",
+    "track_width_m": "계산: 전체 폭 16cm - 타이어 폭 3cm = 13cm",
+    "wheel_radius_m": "추정: TT 타이어 지름 65mm, 실측 필요",
+    "wheelbase_m": "추정: 앞뒤 축간 14cm, 실측 필요",
+    "mass_kg": "추정: 실차 무게와 모터 토크 실측 필요",
+    "camera": "추정: 렌즈 높이·각도·화각은 실차 보정 전 임시값"
+  },
+  "vehicle": {
+    "length_m": 0.25, "body_width_m": 0.10, "body_height_m": 0.025,
+    "track_width_m": 0.13, "wheel_radius_m": 0.0325,
+    "wheel_width_m": 0.03, "wheelbase_m": 0.14, "mass_kg": 0.9,
+    "max_wheel_rad_s": 22.0, "wheel_torque_nm": 0.12,
+    "drive_damping": 0.03, "friction": 0.65
+  },
+  "camera": {
+    "width": 640, "height": 480, "x_m": 0.105, "z_m": 0.14,
+    "pitch_down_deg": 15.0, "yaw_deg": 0.0, "hfov_deg": 66.0
+  },
+  "simulation": {
+    "physics_hz": 120, "camera_hz": 30, "duration_s": 60.0,
+    "warmup_frames": 12, "off_track_grace_s": 1.0,
+    "max_speed_m_s": 0.18, "max_yaw_rad_s": 2.0,
+    "lookahead_m": 0.16, "render_width": 960, "render_height": 540
+  },
+  "randomization": {
+    "dome_intensity": [250.0, 1200.0], "key_intensity": [600.0, 3000.0],
+    "light_temperature_k": [3500.0, 7500.0], "roughness": [0.18, 0.8],
+    "friction": [0.4, 1.0], "motor_gain": [0.85, 1.15],
+    "camera_height_delta_m": [-0.012, 0.012], "camera_pitch_delta_deg": [-5.0, 5.0],
+    "camera_yaw_delta_deg": [-2.0, 2.0], "hfov_delta_deg": [-3.0, 3.0],
+    "spawn_lateral_m": [-0.02, 0.02], "spawn_yaw_deg": [-6.0, 6.0],
+    "image_gain": [0.8, 1.2], "image_noise_std": [0.0, 5.0],
+    "latency_frames": [0, 2]
+  },
+  "props": [
+    {"id": "speed20", "kind": "speed20", "spot": "block-NW-NW", "yaw_deg": 180},
+    {"id": "stop", "kind": "stop", "spot": "block-NE-NE", "yaw_deg": 180},
+    {"id": "horn", "kind": "horn", "spot": "block-SE-SE", "yaw_deg": 0},
+    {"id": "signal", "kind": "signal", "spot": "block-SW-SE", "yaw_deg": 180}
+  ]
+}

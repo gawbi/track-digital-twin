@@ -1,0 +1,4 @@
+# Install using Isaac Sim 5.1's python.sh. Preserve bundled numpy/torch versions.
+Pillow>=10,<13
+opencv-python>=4.8,<5
+onnxruntime>=1.18,<2

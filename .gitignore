@@ -1,2 +1,11 @@
 __pycache__/
 .DS_Store
+outputs/
+datasets/
+models/
+.venv*/
+.ruff_cache/
+*.m4a
+*.wav
+docs/recording/*.auto.json
+docs/recording/*.large.auto.json

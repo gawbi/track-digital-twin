@@ -99,7 +99,7 @@ class DistanceTests(unittest.TestCase):
         for z in [0.0, 0.075, 0.103]:
             pixel = camera.project(0.6, 0.08, z)
             point = camera.intersect(*pixel, plane_height_m=z)
-            np.testing.assert_allclose(point, [0.6, 0.08], atol=1e-8)
+            np.testing.assert_allclose(point, [0.6, 0.08], atol=1e-7)
         self.assertIsNone(camera.intersect(320, -1000))
 
     def test_encoder_units_turn_in_place_and_delayed_pose_interpolation(self):

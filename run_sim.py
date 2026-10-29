@@ -57,7 +57,16 @@ def route_points(layout, name):
     east = max(p[0] for p in outer)
     idx = min(range(len(outer)), key=lambda i: math.dist(outer[i], (east, 0)))
     north_y = max(p[1] for p in outer)
-    return [[0, north_y], [0, 0], [east, 0]] + outer[idx + 1 :]
+    # T-junction pivots sit 2.5cm toward the center road: the car's 0.148m turning
+    # radius exceeds the 0.13m outer-road half width on the centerline.
+    inset = 0.025
+    tail = outer[idx + 1 :]
+    # Rejoin/leave the outer centerline 0.16m from each T so both turns stay sharp.
+    while tail and tail[0][1] > -0.16:
+        tail = tail[1:]
+    while tail and tail[-1][1] > north_y - 0.05 and tail[-1][0] > -0.16:
+        tail = tail[:-1]
+    return [[0, north_y - inset], [0, 0], [east - inset, 0]] + tail
 
 
 def preflight(cfg, layout):

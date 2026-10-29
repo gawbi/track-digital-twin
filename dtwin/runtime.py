@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .core import ROOT, body_corners, wheel_speeds
+from .core import ROOT, SkidSteerModel, body_corners, wheel_speeds
 
 
 class Simulator:
@@ -48,6 +48,16 @@ class Simulator:
         self.objects = build_scene(
             self.stage, cfg, layout, params, ROOT, self.output / "assets", spawn
         )
+        self.drive_model = cfg["simulation"].get("drive_model", "physx")
+        self.skid = None
+        if self.drive_model == "kinematic_skid":
+            self.skid = SkidSteerModel(
+                cfg["vehicle"],
+                spawn,
+                params["skid_yaw_efficiency"],
+                params["motor_time_constant_s"],
+                (params["motor_gain_left"], params["motor_gain_right"]),
+            )
         self.sm = SimulationManager
         self.legacy = not hasattr(SimulationManager, "setup_simulation")
         if self.legacy:
@@ -69,8 +79,12 @@ class Simulator:
             SimulationManager.enable_fabric(False)
             SimulationManager.initialize_physics()
         # Replicator RGB annotator works with a USD Camera; avoids 5.x/6.x camera API changes.
+        from .lens import Lens
+
+        self.lens = Lens(cfg["camera"])
+        # Larger pinhole render when the lens resamples it (see dtwin.lens).
         self.render_product = rep.create.render_product(
-            self.objects["camera_path"], (cfg["camera"]["width"], cfg["camera"]["height"])
+            self.objects["camera_path"], self.lens.render_size
         )
         self.rgb = rep.AnnotatorRegistry.get_annotator("rgb")
         self.rgb.attach([self.render_product])
@@ -162,6 +176,8 @@ class Simulator:
             if name not in CLASSES:
                 continue
             x0, y0, x1, y1 = (float(row[k]) for k in ["x_min", "y_min", "x_max", "y_max"])
+            if getattr(self, "lens", None):
+                x0, y0, x1, y1 = self.lens.box([x0, y0, x1, y1])
             x0, x1 = max(0.0, x0), min(float(width), x1)
             y0, y1 = max(0.0, y0), min(float(height), y1)
             if x1 - x0 >= 4 and y1 - y0 >= 4:
@@ -180,8 +196,15 @@ class Simulator:
         frame = self.raw_rgb()
         if frame.ndim != 3 or frame.shape[2] != 3:
             raise RuntimeError(f"Invalid camera frame: {frame.shape}")
+        if getattr(self, "lens", None):
+            frame = self.lens.apply(frame)
+        if self.params.get("image_blur_sigma", 0) > 0:
+            import cv2
+
+            frame = cv2.GaussianBlur(frame, (0, 0), self.params["image_blur_sigma"])
+        gains = np.asarray(self.params.get("image_channel_gains", [1, 1, 1]), dtype=np.float32)
         frame = np.clip(
-            frame.astype(np.float32) * self.params["image_gain"]
+            frame.astype(np.float32) * self.params["image_gain"] * gains
             + self.rng.normal(0, self.params["image_noise_std"], frame.shape),
             0,
             255,
@@ -194,6 +217,9 @@ class Simulator:
 
     def wheel_measurement(self):
         """Encoder-like angular velocities in rad/s, not target drive velocities."""
+        if getattr(self, "skid", None):
+            # Model wheel rotation after gain/lag/saturation; ground slip is not visible.
+            return self.skid.wheel_rates
         if not self.legacy:
             raise RuntimeError(
                 "Mission encoder adapter targets Isaac Sim 5.1; 6.x is not validated"
@@ -258,12 +284,16 @@ class Simulator:
 
     def step(self, linear, angular, count=True, wheel_override=None):
         left, right = wheel_override or wheel_speeds(linear, angular, self.cfg["vehicle"])
+        steps = self.cfg["simulation"]["physics_hz"] // self.cfg["simulation"]["camera_hz"]
+        if getattr(self, "skid", None):
+            for _ in range(steps):
+                self.skid.step(left, right, 1 / self.cfg["simulation"]["physics_hz"])
+            self._place_car(*self.skid.pose)
         for side, drive in self.objects["wheel_drives"]:
             speed = left if side == "left" else right
             gain = self.params["motor_gain_left" if side == "left" else "motor_gain_right"]
             # USD angular Drive targetVelocity is degrees/s; controller uses rad/s.
             drive.GetTargetVelocityAttr().Set(math.degrees(speed * gain))
-        steps = self.cfg["simulation"]["physics_hz"] // self.cfg["simulation"]["camera_hz"]
         if self.legacy:
             for _ in range(steps):
                 self.world.step(render=False)
@@ -274,6 +304,15 @@ class Simulator:
         if count:
             self.frame += 1
 
+    def _place_car(self, x, y, yaw):
+        from pxr import Gf, UsdGeom
+
+        translate, orient = UsdGeom.Xformable(
+            self.stage.GetPrimAtPath(self.objects["car_path"])
+        ).GetOrderedXformOps()
+        translate.Set(Gf.Vec3d(x, y, 0))
+        orient.Set(Gf.Quatf(Gf.Rotation(Gf.Vec3d(0, 0, 1), math.degrees(yaw)).GetQuat()))
+
     def save_stage(self):
         path = self.output / "scene.usda"
         self.stage.Export(str(path))
@@ -282,8 +321,9 @@ class Simulator:
     def close(self):
         for _, drive in self.objects["wheel_drives"]:
             drive.GetTargetVelocityAttr().Set(0.0)
-        self.rgb.detach([self.render_product])
-        self.boxes.detach([self.render_product])
+        # Replicator 1.12 (Isaac Sim 5.1) expects render product PATHS in detach().
+        self.rgb.detach([self.render_product.path])
+        self.boxes.detach([self.render_product.path])
         self.render_product.destroy()
 
 

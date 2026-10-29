@@ -234,12 +234,15 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
         robot.GetPrim(), (x, y, 0), Gf.Rotation(Gf.Vec3d(0, 0, 1), math.degrees(yaw)).GetQuat()
     )
     body_z = r + 0.012 + v["body_height_m"] / 2
+    # kinematic_skid: visual car moved by runtime.Simulator, no rigid bodies/joints.
+    physics_car = cfg["simulation"].get("drive_model", "physx") == "physx"
     # Keep dynamic body scale at 1: put geometry below rigid Xform.
     chassis = UsdGeom.Xform.Define(stage, "/World/Car/Chassis")
     transform(chassis.GetPrim(), (0, 0, body_z))
-    UsdPhysics.RigidBodyAPI.Apply(chassis.GetPrim())
-    UsdPhysics.MassAPI.Apply(chassis.GetPrim()).CreateMassAttr(v["mass_kg"] * 0.8)
-    UsdPhysics.ArticulationRootAPI.Apply(chassis.GetPrim())
+    if physics_car:
+        UsdPhysics.RigidBodyAPI.Apply(chassis.GetPrim())
+        UsdPhysics.MassAPI.Apply(chassis.GetPrim()).CreateMassAttr(v["mass_kg"] * 0.8)
+        UsdPhysics.ArticulationRootAPI.Apply(chassis.GetPrim())
     cube(
         stage,
         "/World/Car/Chassis/Plate",
@@ -252,14 +255,32 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
         for axle, sx in [("front", 1), ("rear", -1)]:
             path = f"/World/Car/{side}_{axle}"
             pos = (sx * v["wheelbase_m"] / 2, sy * v["track_width_m"] / 2, r)
-            wheel = UsdGeom.Cylinder.Define(stage, path)
-            wheel.CreateAxisAttr("Y")
-            wheel.CreateRadiusAttr(r)
-            wheel.CreateHeightAttr(v["wheel_width_m"])
+            # Wheel Xform; the visual tire and the collider are children.
+            wheel = UsdGeom.Xform.Define(stage, path)
             transform(wheel.GetPrim(), pos)
-            rigid(wheel.GetPrim(), v["mass_kg"] * 0.05)
-            bind(wheel.GetPrim(), yellow)
-            physics_bind(wheel.GetPrim())
+            tire = UsdGeom.Cylinder.Define(stage, path + "/Tire")
+            tire.CreateAxisAttr("Y")
+            tire.CreateRadiusAttr(r)
+            tire.CreateHeightAttr(v["wheel_width_m"])
+            bind(tire.GetPrim(), yellow)
+            if not physics_car:
+                continue
+            UsdPhysics.RigidBodyAPI.Apply(wheel.GetPrim())
+            UsdPhysics.MassAPI.Apply(wheel.GetPrim()).CreateMassAttr(v["mass_kg"] * 0.05)
+            if PhysxSchema:
+                rb = PhysxSchema.PhysxRigidBodyAPI.Apply(wheel.GetPrim())
+                rb.CreateSolverPositionIterationCountAttr(16)
+                rb.CreateSolverVelocityIterationCountAttr(4)
+            if v.get("wheel_collision", "cylinder") == "sphere":
+                # One rounded contact point: cylinder edges catch during skid turns.
+                collider = UsdGeom.Sphere.Define(stage, path + "/Collider")
+                collider.CreateRadiusAttr(r)
+                collider.CreatePurposeAttr(UsdGeom.Tokens.guide)
+                collider = collider.GetPrim()
+            else:
+                collider = tire.GetPrim()
+            UsdPhysics.CollisionAPI.Apply(collider)
+            physics_bind(collider)
             joint = UsdPhysics.RevoluteJoint.Define(stage, "/World/Car/Joints/" + side + "_" + axle)
             joint.CreateBody0Rel().SetTargets([chassis.GetPath()])
             joint.CreateBody1Rel().SetTargets([wheel.GetPath()])
@@ -289,7 +310,11 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
     aperture = 20.955
     camera.CreateHorizontalApertureAttr(aperture)
     camera.CreateVerticalApertureAttr(aperture * c["height"] / c["width"])
-    camera.CreateFocalLengthAttr(aperture / (2 * math.tan(math.radians(c["hfov_deg"] / 2))))
+    # With lens distortion the pinhole render is wider; runtime resamples it (dtwin.lens).
+    from .lens import Lens
+
+    render_hfov = Lens(c).render_hfov_deg
+    camera.CreateFocalLengthAttr(aperture / (2 * math.tan(math.radians(render_hfov / 2))))
     camera.CreateClippingRangeAttr(Gf.Vec2f(0.005, 30.0))
     textures = make_sign_textures(cache)
     spots = {p["id"]: p["center"] for p in layout["prop_spots"]}
@@ -347,13 +372,65 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
                     lamp.GetPrim(), material(stage, path + "/" + color + "_Mat", rgb, emission=rgb)
                 )
         props.append({**p, "position": [px, py], "path": path})
+    add_room(stage, layout, params, {p["spot"] for p in cfg["props"]})
     return {
         "camera_path": str(camera.GetPath()),
         "body_path": str(chassis.GetPath()),
+        "car_path": str(robot.GetPath()),
         "wheel_drives": wheels,
         "props": props,
         "body_z": body_z,
     }
+
+
+def add_room(stage, layout, params, used_spots):
+    """Unlabeled clutter like the classroom photos: walls, ceiling lights, standing
+    people-sized shapes, chairs and model trees on free blue circles."""
+    import random
+
+    rng = random.Random(params["seed"] ^ 0x77A1)
+    varied = params.get("randomize") or params.get("stress")
+
+    def pick(lo, hi):
+        return rng.uniform(lo, hi) if varied else (lo + hi) / 2
+
+    def color(base, spread):
+        return tuple(min(1.0, max(0.0, c + (rng.uniform(-spread, spread) if varied else 0))) for c in base)
+
+    wall = material(stage, "/World/Materials/Wall", color((0.78, 0.68, 0.52), 0.15), 0.8)
+    half = pick(1.9, 3.2)
+    for i, (x, y, sx, sy) in enumerate(
+        [(0, half, 2 * half, 0.05), (0, -half, 2 * half, 0.05), (half, 0, 0.05, 2 * half), (-half, 0, 0.05, 2 * half)]
+    ):
+        cube(stage, f"/World/Room/Wall{i}", (x, y, 1.1), (sx, sy, 2.2), wall)
+    # No closed ceiling: it would block the dome light that lights the mat.
+    lamp = material(stage, "/World/Materials/Lamp", (1, 1, 1), 0.5, emission=(1, 1, 0.95))
+    for i in range(rng.randint(3, 8) if varied else 5):
+        cube(stage, f"/World/Room/Lamp{i}", (pick(-half, half), pick(-half, half), 2.4),
+             (rng.uniform(0.05, 1.2), rng.uniform(0.05, 0.3), 0.01), lamp)
+    for i in range(rng.randint(0, 7) if varied else 3):
+        # Standing/sitting people-like shapes and chairs outside the printed mat.
+        angle, radius = rng.uniform(-math.pi, math.pi), rng.uniform(1.45, half - 0.2)
+        tall = rng.choice([rng.uniform(0.4, 0.8), rng.uniform(1.2, 1.75)])
+        shade = material(stage, f"/World/Materials/Clutter{i}", color((0.3, 0.3, 0.32), 0.3), 0.7)
+        cube(stage, f"/World/Room/Clutter{i}", (radius * math.cos(angle), radius * math.sin(angle), tall / 2),
+             (rng.uniform(0.25, 0.6), rng.uniform(0.2, 0.5), tall), shade)
+    leaf = material(stage, "/World/Materials/Leaf", color((0.12, 0.45, 0.12), 0.08), 0.8)
+    trunk = material(stage, "/World/Materials/Trunk", (0.35, 0.22, 0.1), 0.8)
+    free = [spot for spot in layout["prop_spots"] if spot["id"] not in used_spots]
+    rng.shuffle(free)
+    for i, spot in enumerate(free[: rng.randint(2, 8) if varied else 4]):
+        x, y = spot["center"]
+        tree = UsdGeom.Cylinder.Define(stage, f"/World/Room/Tree{i}/Trunk")
+        tree.CreateRadiusAttr(0.008)
+        tree.CreateHeightAttr(0.05)
+        transform(tree.GetPrim(), (x, y, 0.025))
+        bind(tree.GetPrim(), trunk)
+        crown = UsdGeom.Cone.Define(stage, f"/World/Room/Tree{i}/Crown")
+        crown.CreateRadiusAttr(rng.uniform(0.03, 0.05))
+        crown.CreateHeightAttr(rng.uniform(0.08, 0.13))
+        transform(crown.GetPrim(), (x, y, 0.1))
+        bind(crown.GetPrim(), leaf)
 
 
 def set_signal(stage, props, color):

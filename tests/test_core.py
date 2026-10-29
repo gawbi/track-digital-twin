@@ -47,10 +47,11 @@ class GeometryTests(unittest.TestCase):
         self.assertLess(p.distance, 0)
 
     def test_randomization_is_reproducible_without_mutating_config(self):
+        height = self.cfg["camera"]["z_m"]
         a = sample_episode(self.cfg, 123, True)
         self.assertEqual(a, sample_episode(self.cfg, 123, True))
         self.assertNotEqual(a, sample_episode(self.cfg, 124, True))
-        self.assertEqual(self.cfg["camera"]["z_m"], 0.14)
+        self.assertEqual(self.cfg["camera"]["z_m"], height)
 
     def test_gpio_bridge_left_and_right_match_course_pins(self):
         devices = {}

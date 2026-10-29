@@ -44,8 +44,14 @@ class CameraGeometry:
         if self.distortion.size:
             import cv2
 
-            xy = cv2.undistortPoints(
-                np.array([[[u, v]]], dtype=np.float64), self.matrix, self.distortion
+            # Default 5 iterations leave ~0.1mm errors with wide-angle k1 near the edges.
+            xy = cv2.undistortPointsIter(
+                np.array([[[u, v]]], dtype=np.float64),
+                self.matrix,
+                self.distortion,
+                None,
+                None,
+                (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 50, 1e-12),
             )[0, 0]
             u, v = self.cx + self.fx * xy[0], self.cy + self.fy * xy[1]
         ray = self.rotation @ np.array([1.0, -(u - self.cx) / self.fx, -(v - self.cy) / self.fy])

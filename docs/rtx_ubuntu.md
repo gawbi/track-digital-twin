@@ -1,16 +1,112 @@
 # Ubuntu · RTX 5070 · Isaac Sim 5.1
 
 사용자가 지정한 실행 환경이다. 시뮬레이터 Python과 학습용 CUDA 환경을 분리한다.
-이 저장소는 Isaac Sim을 자동으로 설치하거나 GPU 드라이버를 변경하지 않는다.
+아직 저장소를 받지 않았어도 아래 0번부터 진행할 수 있다. 에이전트에게 맡기려면
+[시작 프롬프트](../START_HERE_PROMPT.md) 전체를 대화 입력창에 붙여 넣는다.
+저장소의 실행 스크립트 자체에는 Isaac Sim 설치·GPU 드라이버 변경 기능이 없으므로,
+에이전트가 설치 상태를 확인하고 아래 절차로 준비한다.
+
+## 0. Git 확인과 저장소 클론
+
+Ubuntu에서 터미널을 열고 다음을 실행한다. 작업 에이전트가 있다면 에이전트가 직접 실행한다.
+
+```bash
+pwd
+git --version
+```
+
+`git: command not found`가 나오면 Git과 다운로드/압축 해제에 필요한 도구를 설치한다.
+관리자 비밀번호가 필요하면 Ubuntu 로그인 비밀번호를 해당 터미널에 입력한다. 비밀번호를 대화에 보내지 않는다.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git ca-certificates unzip
+```
+
+`$HOME/projects/track-digital-twin`이 **없는 경우** 다음 명령을 실행한다.
+`$HOME`은 Ubuntu 사용자 홈 경로이므로 사용자 이름을 따로 바꿀 필요가 없다.
+
+```bash
+mkdir -p "$HOME/projects"
+cd "$HOME/projects"
+git clone --branch feat/isaac-sim-rtx5070 --single-branch https://github.com/gawbi/track-digital-twin.git
+cd track-digital-twin
+git status --short --branch
+```
+
+마지막 출력에 `feat/isaac-sim-rtx5070`이 보이면 맞는 브랜치다. 현재 실행·학습 코드는 아직 `main`에 병합되지 않았다.
+같은 폴더가 이미 있으면 먼저 그 폴더의 `git status`와 `git remote -v`를 확인한다.
+동일 저장소이며 변경이 없을 때만 fetch 후 대상 브랜치를 `--ff-only`로 갱신한다.
+다른 프로젝트나 수정 중인 폴더이면 파일을 보존하고 새 이름의 폴더에 clone한다.
+기존 폴더 삭제, hard reset, 자동 stash로 충돌을 피하지 않는다.
+
+클론 뒤에는 [상세 인계](../RTX_HANDOFF_PROMPT.md), [이슈 #2](https://github.com/gawbi/track-digital-twin/issues/2),
+[후속 구현 요구사항](real_vehicle_plan.md)을 읽는다. GitHub 이슈에 접근할 수 없어도 로컬 요구사항 문서로 진행할 수 있다.
 
 ## 1. 실행 환경과 패키지
 
-Isaac Sim 5.1의 내장 Python은 3.11이다. 아래 `ISAAC_PY`를 실제 설치 위치로 바꾼다.
+이후 명령은 클론한 `track-digital-twin` 폴더에서 실행한다. 먼저 설치 전제와 여유 공간을 확인한다.
 
 ```bash
-cd track-digital-twin
-export ISAAC_PY="$HOME/isaacsim/python.sh"
+lsb_release -a
+uname -m
+df -h .
+free -h
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
+```
+
+`nvidia-smi`가 없거나 GPU를 읽지 못하면 그 오류를 먼저 진단한다. 기존 드라이버를 무조건 재설치하지 않는다.
+기기와 드라이버는 [NVIDIA 5.1 요구사항](https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/requirements.html)과 대조한다.
+RTX 5070 이름만으로 지원·VRAM·실행 성공을 단정하지 않고 작은 장면부터 확인한다.
+
+### 이미 Isaac Sim 5.1이 설치된 경우
+
+설치 폴더의 `python.sh` 위치를 찾는다. 기존 안내의 `$HOME/isaacsim/python.sh`는 예시 경로다.
+
+```bash
+find "$HOME" -maxdepth 5 -type f -name python.sh -path '*isaac*' -print 2>/dev/null
+```
+
+발견한 실제 경로를 `ISAAC_PY`로 지정한다. 예를 들어 `$HOME/isaacsim/python.sh`가 존재한다면:
+
+```bash
+export ISAAC_PY="$HOME/isaacsim/python.sh"
+"$ISAAC_PY" --version
+```
+
+Isaac Sim 5.1의 Python은 3.11이다. Python 버전만으로 Isaac 버전을 확정하지 말고 설치 정보/런처도 확인한다.
+검색에 나오지 않으면 다른 디스크의 설치 위치와 기존 가상환경도 확인한다.
+
+### Isaac Sim이 아직 없는 경우
+
+공식 5.1 설치 방식을 선택해 **설치까지 진행**한다. 아래 두 방식을 중복 설치할 필요는 없다.
+
+- **Standalone:** [공식 설치 안내](https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/install_workstation.html)에서
+  5.1.0의 기기 아키텍처에 맞는 패키지를 받아 새 폴더에 압축 해제하고 `post_install.sh`를 실행한다.
+  기존 설치 폴더 위에 압축을 풀지 않는다. 그 폴더의 `python.sh`를 `ISAAC_PY`로 지정한다.
+- **전용 Python 환경:** [공식 Python 설치 안내](https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/install_python.html)에
+  따라 Python 3.11 환경에 정확히 5.1.0을 설치한다. 아래는 `python3.11`이 이미 준비된 경우의 명령이다.
+
+```bash
+python3.11 --version
+python3.11 -m venv .venv-isaac
+.venv-isaac/bin/python -m pip install --upgrade pip
+.venv-isaac/bin/python -m pip install 'isaacsim[all,extscache]==5.1.0' --extra-index-url https://pypi.nvidia.com
+export ISAAC_PY="$PWD/.venv-isaac/bin/python"
+```
+
+Python 3.11이 없으면 에이전트가 Ubuntu 버전과 기존 환경 관리 도구를 확인해 전용 3.11 환경을 준비한다.
+시스템 기본 Python의 링크를 바꾸거나 기존 `.venv-isaac`을 덮어쓰지 않는다.
+NVIDIA 로그인·라이선스 동의·관리자 권한이 실제로 필요하면 필요한 조치만 사용자에게 요청하고,
+사용자의 동의를 대신 입력하지 않는다. 독립적으로 가능한 저장소 코드 작업은 계속 진행한다.
+설치 로그에 나타난 버전·Python 실행 파일·설치 경로를 남긴다.
+
+### 프로젝트 패키지와 첫 검사
+
+위에서 정한 실행 파일로 프로젝트 의존성을 설치한다. 매 터미널/에이전트 실행에서 `ISAAC_PY`를 다시 지정하거나
+기록한 실제 경로를 사용한다. 학습용 torch는 별도 환경인 5번에서 설치한다.
+
+```bash
 "$ISAAC_PY" --version
 "$ISAAC_PY" -m pip install -r requirements-sim.txt
 "$ISAAC_PY" run_sim.py --check
@@ -26,13 +122,26 @@ RTX 5070이라는 이름만으로 노트북 VRAM을 가정하지 않는다. 렌�
 설치/드라이버 요구사항은 [NVIDIA 5.1 문서](https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/requirements.html),
 Python 환경은 [공식 설명](https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/install_python.html)을 따른다.
 
+짧은 실제 렌더링도 확인한다. 이 명령은 화면 없이 실행하고 RGB와 결과를 저장한다.
+같은 출력 폴더가 이미 있으면 다른 경로를 사용한다.
+
+```bash
+"$ISAAC_PY" run_sim.py --mode expert --headless --duration 10 --seed 1000 --record --output outputs/first-smoke
+```
+
+`outputs/first-smoke/expert-outer-seed1000/summary.json`과 `images/`를 확인한다.
+`--check` 통과만으로 렌더링·물리 주행이 성공한 것은 아니다. 처음 셰이더를 준비하는 동안은 로그와 GPU 사용량을 확인한다.
+렌더링·카메라·바퀴 접촉 오류는 원인을 수정하고 짧게 재실행한 뒤 다음 단계로 간다.
+
 ## 2. 먼저 수동 주행과 카메라 확인
 
 ```bash
-"$ISAAC_PY" run_sim.py --mode manual --seed 1
+"$ISAAC_PY" run_sim.py --mode manual --duration 15 --seed 1 --output outputs/first-manual
 ```
 
 OpenCV 카메라 창에서 W/S 전진·후진, A/D 제자리 회전, 스페이스 정지, Q 종료.
+위 명령은 시뮬레이션 시간 15초 뒤 종료한다. 사용자가 더 오래 조작하려면 `--duration` 값을 늘리거나 제거한다.
+GUI를 사용할 수 없는 에이전트 세션에서는 이 단계를 미실행으로 기록하고 앞의 headless 결과로 다음 작업을 진행한다.
 키 입력이 끊기면 0.3초 후 명령이 정지로 돌아간다. 실제 지연 시간은 화면 프레임 처리 속도의 영향을 받는다.
 바퀴가 뜨거나 회전하지 않으면 학습 데이터를 수집하기 전에 바퀴 접촉·조인트·질량·토크를 확인한다.
 

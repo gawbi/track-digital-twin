@@ -1,7 +1,8 @@
 # RTX 노트북 코딩 에이전트용 인계 프롬프트
 
-아래 내용을 Ubuntu RTX 노트북의 코딩 에이전트에게 전달한다. 저장소를 이미 열었다면
-“`RTX_HANDOFF_PROMPT.md`를 읽고 첫 실행부터 진행해 주세요”라고 요청하면 된다.
+저장소를 아직 받지 않았다면 [Git 설치·클론부터 시작하는 프롬프트](START_HERE_PROMPT.md) 전체를
+Ubuntu RTX 노트북의 코딩 에이전트에게 전달한다. 에이전트가 Git 설치 확인·클론·설치 경로 탐색부터 직접 진행한다.
+저장소를 이미 열었다면 “`RTX_HANDOFF_PROMPT.md`와 이슈 #2를 읽고 설치 확인부터 구현·검증까지 진행해 주세요”라고 요청한다.
 
 ---
 
@@ -25,6 +26,8 @@ cd track-digital-twin
 
 이미 저장소가 있으면 먼저 `git status`, 원격 저장소와 현재 브랜치를 확인하고 로컬 변경을 보존하며 갱신합니다.
 `reset --hard`, `git clean`, 강제 푸시로 기존 작업을 지우지 않습니다.
+폴더가 다른 프로젝트이거나 수정 중이면 별도 폴더에 clone하여 진행합니다.
+Git이 없으면 먼저 설치하고, 설치·실행 명령을 사용자에게 나열하는 데서 멈추지 말고 직접 실행합니다.
 
 ## 먼저 읽을 자료와 현재 상태
 
@@ -58,7 +61,8 @@ RTX에서 개발·학습하고 보유 Raspberry Pi 5에서 추론·제어하며,
 
 먼저 Ubuntu 버전, GPU의 정확한 이름·VRAM·드라이버, Isaac 설치 경로와 버전을 기록합니다.
 RTX 5070이라는 이름만으로 VRAM을 가정하지 않습니다. Isaac Sim 5.1의 내장 Python은 3.11입니다.
-설치가 없으면 NVIDIA 공식 5.1 설치 문서를 확인해 준비하고, 시스템 드라이버나 전역 환경 변경은 별도 검토합니다.
+설치가 없으면 [설치 안내](docs/rtx_ubuntu.md)의 standalone/Python 3.11 경로 중 기기에 맞는 방식으로
+NVIDIA 공식 5.1 설치를 진행합니다. 시스템 드라이버나 전역 환경 변경은 별도 검토합니다.
 Isaac 번들 torch/numpy를 임의로 교체하지 않고 학습 환경을 분리합니다.
 
 아래 `ISAAC_PY`는 실제 설치 경로로 바꿉니다. 시뮬레이터 설치가 확인되면 순서대로 실행합니다.
@@ -70,12 +74,14 @@ export ISAAC_PY="$HOME/isaacsim/python.sh"
 "$ISAAC_PY" --version
 "$ISAAC_PY" -m pip install -r requirements-sim.txt
 "$ISAAC_PY" run_sim.py --check
-"$ISAAC_PY" run_sim.py --mode manual --seed 1 --record --output outputs/first-manual
 "$ISAAC_PY" run_sim.py --mode expert --headless --duration 10 --seed 1000 --record --output outputs/first-smoke
+"$ISAAC_PY" run_sim.py --mode manual --duration 15 --seed 1 --record --output outputs/first-manual
 ```
 
 수동 주행은 카메라 창에서 W/S 전후진, A/D 회전, 스페이스 정지, Q 종료입니다.
-대화형 창을 사용할 수 없다면 headless 실행과 저장된 영상으로 먼저 확인하고, 수동 확인은 별도로 남깁니다.
+위 manual 명령은 15초의 시뮬레이션 후 종료해 에이전트가 키 입력을 무기한 기다리지 않게 합니다.
+사용자가 직접 오래 조작할 때는 `--duration`을 조정합니다. 대화형 창을 사용할 수 없다면
+manual 명령은 생략하고 headless 실행과 저장된 영상으로 먼저 확인하며, 수동 확인은 별도로 남깁니다.
 첫 실행은 셰이더 준비 때문에 시간이 걸릴 수 있으므로 로그와 GPU 사용량을 살펴봅니다.
 
 다음을 확인한 뒤 장시간 수집으로 넘어갑니다.
@@ -130,6 +136,8 @@ export ISAAC_PY="$HOME/isaacsim/python.sh"
 
 계획 설명에서 멈추지 말고 환경 점검과 첫 실행부터 진행합니다. 실행 실패는 명령·로그·원인을 확인해
 수정 가능한 범위까지 처리하고, 사용자 입력이 꼭 필요한 경우 구체적인 막힘과 필요한 정보만 알립니다.
+이미 지정한 범위의 다음 단계마다 시작 허락을 반복해서 묻지 않습니다. Pi나 실제 데이터가 없으면
+독립적으로 가능한 수집/분할·미세조정 코드·가짜 모터 검사와 RTX 작업을 이어갑니다.
 
 명령·버전·로그·이미지와 평가 결과는 공개 커밋에서 제외된 `outputs/` 등에 기록합니다.
 완료 보고에는 실제 환경, 성공한 실행, 데이터 규모/클래스 분포, 모델 경로와 데이터 분리,

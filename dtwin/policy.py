@@ -20,19 +20,40 @@ def preprocess(rgb):
 
 
 class OnnxPolicy:
-    def __init__(self, path):
+    def __init__(self, path, threads=None):
         import onnxruntime as ort
+
+        from .actions import ACTION_SPACE
 
         self.metadata = json.loads(Path(path).with_suffix(".json").read_text())
         if self.metadata["preprocess"] != "rgb_bottom_half_yuv_blur3_200x66_chw_div255":
             raise ValueError("Unsupported preprocessing contract")
-        self.session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        # Exports before the action contract existed used the same normalized output.
+        if self.metadata.get("action_space", ACTION_SPACE) != ACTION_SPACE:
+            raise ValueError(f"Policy action space must be {ACTION_SPACE}")
+        options = ort.SessionOptions()
+        if threads:
+            options.intra_op_num_threads = threads
+        self.session = ort.InferenceSession(
+            str(path), options, providers=["CPUExecutionProvider"]
+        )
         self.input = self.session.get_inputs()[0].name
 
-    def command(self, rgb):
-        values = self.session.run(None, {self.input: preprocess(rgb)[None]})[0][0]
+    def action(self, rgb, timings=None):
+        """Normalized [linear, angular] in [-1, 1]; optional stage timings in ns."""
+        import time
+
+        start = time.monotonic_ns()
+        tensor = preprocess(rgb)[None]
+        middle = time.monotonic_ns()
+        values = self.session.run(None, {self.input: tensor})[0][0]
+        if timings is not None:
+            timings["lane_preprocess_ns"] = middle - start
+            timings["lane_inference_ns"] = time.monotonic_ns() - middle
         if len(values) != 2 or not np.isfinite(values).all():
             raise ValueError("Policy must return two finite values")
-        linear = float(np.clip(values[0], -1, 1)) * self.metadata["max_speed_m_s"]
-        angular = float(np.clip(values[1], -1, 1)) * self.metadata["max_yaw_rad_s"]
-        return linear, angular
+        return float(np.clip(values[0], -1, 1)), float(np.clip(values[1], -1, 1))
+
+    def command(self, rgb):
+        linear, angular = self.action(rgb)
+        return linear * self.metadata["max_speed_m_s"], angular * self.metadata["max_yaw_rad_s"]

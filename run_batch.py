@@ -33,6 +33,8 @@ def main():
     if a.mode == "evaluate":
         metadata = json.loads(a.policy.with_suffix(".json").read_text())
         used = set(str(seed) for groups in metadata["splits"].values() for seed in groups)
+        # Fine-tuned policies keep the synthetic seeds of every ancestor.
+        used |= set(str(seed) for seed in metadata.get("synthetic_seed_history", []))
         if a.missions:
             detector_meta = json.loads(a.detector.with_suffix(".json").read_text())
             used |= set(str(seed) for seed in detector_meta.get("training_scene_seeds", []))

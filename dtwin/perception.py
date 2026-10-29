@@ -88,7 +88,7 @@ def decode_yolo(raw, classes, image_shape, ratio, padding, confidence=0.5, nms_i
 
 
 class OnnxDetector:
-    def __init__(self, path, confidence=0.5):
+    def __init__(self, path, confidence=None, threads=None):
         import onnxruntime as ort
 
         self.metadata = json.loads(Path(path).with_suffix(".json").read_text())
@@ -103,8 +103,14 @@ class OnnxDetector:
             or not set(self.classes) <= set(CLASSES)
         ):
             raise ValueError("Unknown or duplicate detector classes")
-        self.confidence = confidence
-        self.session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        # Explicit value, else the validation-selected threshold, else 0.5.
+        self.confidence = confidence or self.metadata.get("confidence_threshold") or 0.5
+        options = ort.SessionOptions()
+        if threads:
+            options.intra_op_num_threads = threads
+        self.session = ort.InferenceSession(
+            str(path), options, providers=["CPUExecutionProvider"]
+        )
         inp = self.session.get_inputs()[0]
         if (
             len(inp.shape) != 4

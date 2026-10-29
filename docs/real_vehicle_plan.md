@@ -1,7 +1,7 @@
 # 보유 장비로 진행할 실제 데이터·실차 구현 요구사항
 
 작성일: 2026-10-22. 사용자 피드백을 반영한 **후속 구현 요청**이다.
-이 문서의 작업은 아직 완료되지 않았다. 기존 시뮬레이션 구현과 검증 범위는 [검증 기록](validation.md)을 따른다.
+2026-10-29: 도구 구현 완료, 실제 Pi·실차 실행과 A/B/C 비교는 미완료([구현 현황](#구현-현황-2026-10-29)). 기존 시뮬레이션 구현과 검증 범위는 [검증 기록](validation.md)을 따른다.
 
 ## 목표와 자원 범위
 
@@ -145,12 +145,59 @@ test에는 학습·증강·임계값 탐색을 적용하지 않는다.
 후속 작업자는 아래 목록을 실제 근거와 함께 갱신한다. 필요한 도구 이름은 저장소 구조에 맞춰 정하되
 아직 없는 도구의 실행 명령을 이미 동작하는 것처럼 문서화하지 않는다.
 
-- [ ] 실제 수집 형식·차선 동작 표현과 보정 기준 결정, 수집기 구현.
-- [ ] 세션 단위 고정 분할·중복 검사·분할/클래스 통계 도구 구현.
-- [ ] 차선/검출 미세조정 옵션과 독립 test 평가 경로, 학습 이력 보존 구현.
-- [ ] 최신 프레임 처리·별도 모터 제어·만료 정지 실행기 및 가짜 모터 검사 구현.
-- [ ] Pi 지연 측정과 주행/미션 결과 집계 도구 구현.
+- [x] 실제 수집 형식·차선 동작 표현과 보정 기준 결정, 수집기 구현. (Pi 실행은 미실행)
+- [x] 세션 단위 고정 분할·중복 검사·분할/클래스 통계 도구 구현.
+- [x] 차선/검출 미세조정 옵션과 독립 test 평가 경로, 학습 이력 보존 구현.
+- [x] 최신 프레임 처리·별도 모터 제어·만료 정지 실행기 및 가짜 모터 검사 구현.
+- [x] Pi 지연 측정과 주행/미션 결과 집계 도구 구현. (Pi 실측은 미실행)
 - [ ] RTX·Pi 실제 실행, A/B/C validation 비교와 최종 test·주행 평가 결과 기록.
+  RTX 합성 학습·시뮬레이션 평가는 [검증 기록](validation.md). 실제 주행 세션·Pi 측정·A/B/C 비교는 남음.
+
+## 구현 현황 2026-10-29
+
+코드는 구현했고 CPU 단위 테스트·가짜 모터 장애 주입·작은 생성 데이터 파이프라인(`tools/smoke_learning.py`)으로 검사했다.
+**Raspberry Pi와 실제 모터에서는 아직 실행하지 않았다.** 현장 순서는 [실습실 체크리스트](field_session.md)에 있다.
+
+### 공통 동작 형식 결정
+
+- 차선 정책 출력은 `normalized_linear_angular_v1`: [선속도/최대, 각속도/최대] ∈ [-1, 1] (`dtwin/actions.py`).
+  시뮬레이터는 설정의 m/s·rad/s로, 실차는 `DutyMixer`(최대 duty, 좌우 회전 혼합비, trim, deadband)로 좌우 PWM duty로 바꾼다.
+  혼합비 기본값은 시뮬레이터 바퀴 비율과 같은 0.72이며 [추정]이다.
+- 실제 수집의 정답은 **보낸 명령**(정규화 동작 + duty + 적용 시각)이다. PWM을 측정 속도로 기록하지 않는다.
+  엔코더 필드는 실제 측정 어댑터가 있을 때만 채운다(현재 어댑터 없음).
+- 기존 `8_4.py` 각도 출력은 변환 규칙이 교재 코드에 있고 저장소에 없으므로 자동 변환하지 않는다. 8_4.py로 주행하며
+  수집할 때는 실제로 보낸 GPIO duty를 기록하는 방식이 근거가 있다.
+
+### 도구
+
+| 단계 | 명령 | 내용 |
+|---|---|---|
+| 수집 | `collect_real.py` (Pi) | Picamera2 센서 시각(CLOCK_BOOTTIME)·RGB·보낸 명령. 키 입력 0.3초 만료 시 정지 |
+| 기존 사진 | `tools/import_real_images.py` | 차량 카메라 JPEG 폴더를 명령 없는 세션으로 가져오기(검출 라벨/평가용) |
+| 라벨 초안 | `tools/propose_real_boxes.py` | 색·모양 후보 → 검토 JSON → YOLO 라벨. 사람 확인 전에는 초안 |
+| 분할 | `split_real.py` | `source_recording` 단위 고정 manifest, 정확/근접 중복, 분할별 클래스 수, 한계 표시. 덮어쓰기 거부 |
+| 차선 학습 | `train_policy.py --real-manifest M --train-on synthetic/real/both --select-on real --init-checkpoint A/policy.pt --lr 1e-5` | A/B/C 구성. test 미평가, 합성 시드 이력·실제 manifest ID 보존 |
+| 검출 학습 | `make_detector_dataset.py --real-manifest M`, `train_detector.py --weights A/best.pt --optimizer AdamW --lr0 ...` | 새 학습과 `--resume` 구분, 적용 학습률 기록 |
+| 선택/최종 | `evaluate_lane_offline.py`, `evaluate_detector.py` | validation에서 모델·임계값 선택, `--split test --final`만 test 접근, 접근 기록 |
+| 실차 실행 | `run_vehicle.py` (Pi) | 최신 프레임 인식 스레드와 50Hz 모터 루프 분리, 촬영 시각 기준 만료·정지 사유 기록 |
+| 측정 | `summarize_vehicle_run.py`, `tools/motion_calibration.py` | 단계별·촬영→모터 지연 p50/p95/최대, 주기·기한 초과, 시도별 완주/미션 기록, duty→속도·회전 효율 |
+
+### A/B/C 실험 명령 (실제 세션 확보 후)
+
+```bash
+python split_real.py outputs/real_sessions --output outputs/real/manifest-v1.json
+python train_policy.py outputs/train-v2 --real-manifest outputs/real/manifest-v1.json --train-on synthetic \
+  --select-on real --experiment A --output models/lane-A --frame-stride 2
+python train_policy.py --real-manifest outputs/real/manifest-v1.json --experiment B --output models/lane-B
+python train_policy.py --real-manifest outputs/real/manifest-v1.json --init-checkpoint models/lane-A/policy.pt \
+  --lr 1e-5 --experiment C --output models/lane-C
+python evaluate_lane_offline.py models/lane-C/policy.onnx --real-manifest outputs/real/manifest-v1.json --split validation
+```
+
+### 엔코더가 없을 때의 범위
+
+`run_vehicle.py`는 엔코더 어댑터가 없으면 `--missions`를 거부하고 검출기를 **관측 기록 전용**으로 돌린다.
+시각만으로 분홍선·횡단보도 접근 거리를 판단하는 대체 미션 제어는 아직 구현하지 않았다(미검증·정지 상태로 남김).
 
 작업은 `feat/isaac-sim-rtx5070`과 기존 Draft PR에서 이어간다. 새 장비 구매나 플랫폼 전환이
 필요하다고 판단하면 먼저 현재 장비에서 측정한 병목을 제시한다. 원본 영상·교재 코드·가중치·데이터는

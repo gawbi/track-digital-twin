@@ -75,6 +75,8 @@ export ISAAC_PY="$HOME/isaacsim/python.sh"
 ```
 
 Isaac Sim 5.1의 Python은 3.11이다. Python 버전만으로 Isaac 버전을 확정하지 말고 설치 정보/런처도 확인한다.
+pip로 설치한 경우 `python.sh`가 없으므로 그 가상환경의 `bin/python`을 `ISAAC_PY`로 쓴다.
+2026-10-29 실행 기기에서는 `ISAAC_PY=$HOME/isaacsim_env/bin/python`(isaacsim 5.1.0.0, Python 3.11.16)이었다.
 검색에 나오지 않으면 다른 디스크의 설치 위치와 기존 가상환경도 확인한다.
 
 ### Isaac Sim이 아직 없는 경우
@@ -162,6 +164,33 @@ GUI를 사용할 수 없는 에이전트 세션에서는 이 단계를 미실행
 
 결과는 `outputs/expert-outer-seed1000/` 등에 저장한다. 같은 폴더는 덮어쓰지 않는다.
 
+### 차량 구동 모델 (`simulation.drive_model`)
+
+2026-10-29 RTX 실행에서 `tools/physics_probe.py`로 PhysX 강체 바퀴를 측정한 결과, 직진·부호·단위·접지는 정상이지만
+**전진하면서 도는 스키드 회전은 명령의 3–9%만 재현**되었다(실린더 바퀴는 회전 중 차체가 넘어짐, 구 바퀴·마찰·토크·솔버
+반복·축간을 바꿔도 동일). 쿨롱 마찰 계산으로는 이 차량 형상의 회전 효율이 약 0.46이어야 한다.
+그래서 수집·평가 기본값은 `kinematic_skid`다. 좌우 바퀴 목표 → 모터 편차·1차 지연·포화 → 회전 효율 η로 차체를 움직이고,
+엔코더 값은 목표가 아닌 모델 바퀴 회전율이다. η·시간상수는 [추정]이며 무작위화한다.
+`physx`는 진단용으로 남겼다. 실차 측정(`tools/motion_calibration.py`)으로 η와 duty당 속도를 보정한다.
+
+```bash
+"$ISAAC_PY" tools/physics_probe.py --output outputs/probe-kinematic
+"$ISAAC_PY" tools/physics_probe.py --output outputs/probe-physx --set 'simulation.drive_model="physx"'
+```
+
+교사는 급회전 꼭짓점(교차로)까지 직진한 뒤 제자리 회전하고, 실현된 요 변화로 미끄러짐 비율과 좌우 모터 편차를 보상한다.
+inner 경로의 T자 회전점은 바깥 도로 중심선에서 2.5cm 안쪽이다(차량 회전 반경 0.148m > 바깥 도로 반폭 0.13m).
+
+### 카메라 (`camera`)
+
+카메라 높이·기울기·화각·왜곡은 2026-10-14 차량 카메라 사진에서 추정한 값이다(높이 약 7cm, 8.5° 위, 중심 fx≈330px,
+k1≈-0.3). 렌즈 왜곡이 있으면 더 넓은 핀홀 영상을 2배 해상도로 렌더하고 `dtwin/lens.py`로 왜곡 영상과 라벨을 함께 변환한다.
+실제 사진과 같은 위치에서 비교하려면:
+
+```bash
+"$ISAAC_PY" tools/render_view.py --output outputs/views --pose 0 0.45 -90 --pose -0.4 0.8725 0
+```
+
 | 파일 | 내용 |
 |---|---|
 | `episode.json` | 설정, 난수 시드, 조명·마찰·모터·카메라 무작위화 값 |
@@ -196,7 +225,8 @@ source .venv-train/bin/activate
 python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 python -m pip install -r requirements-train.txt
 python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available()); print(torch.cuda.get_device_name(0)); print(torch.ones(1, device="cuda") * 2)'
-python train_policy.py outputs/train --output models/lane --epochs 30 --batch-size 64 --device cuda
+python train_policy.py outputs/train --output models/lane --epochs 30 --batch-size 64 --device cuda --frame-stride 2
+python evaluate_lane_offline.py models/lane/policy.onnx --synthetic outputs/train --split validation
 ```
 
 CUDA 12.8 빌드는 예시다. 설치 시점 공식 빌드·드라이버 조합과 위 GPU 텐서 연산의 성공을 먼저 확인한다.
@@ -205,7 +235,9 @@ CUDA 12.8 빌드는 예시다. 설치 시점 공식 빌드·드라이버 조합�
 학습 코드는 RGB 하단 절반 → YUV → 3×3 블러 → 200×66 → CHW/255 전처리를 공유한다.
 작은 CNN이 선속도와 각속도를 예측하며, 곡선 프레임 가중치와 밝기·채널·잡음·좌우 반전을 사용한다.
 데이터는 **장면 시드 단위**로 train/validation/test를 분리한다. 인접 프레임이나 같은 시드의 다른 주행이 분할을 넘지 않는다.
-가장 좋은 validation 모델을 ONNX로 내보내고 test 오차를 기록한다. 이 오차만으로 강건하다고 판정하지 않는다.
+가장 좋은 validation 모델을 ONNX로 내보낸다. **학습 스크립트는 test를 평가하지 않는다.** 설정을 고정한 뒤
+`evaluate_lane_offline.py --split test --final`로 한 번 평가하며, 접근할 때마다 `test_access.jsonl`에 기록된다.
+오프라인 오차만으로 강건하다고 판정하지 않는다. 실제 데이터 미세조정은 [후속 구현](real_vehicle_plan.md#구현-현황-2026-10-29)을 따른다.
 
 ## 6. 보지 않은 조건에서 카메라 정책 평가
 
@@ -224,9 +256,15 @@ python3 evaluate_runs.py outputs/stress
 ## 7. 표지판·신호등 검출기
 
 ```bash
-python make_detector_dataset.py outputs/train --output datasets/signs
-python train_detector.py datasets/signs/data.yaml --batch-size 8 --device 0
+python make_detector_dataset.py outputs/train --output datasets/signs --stride 6
+python train_detector.py datasets/signs/data.yaml --weights models/yolo11n.pt --optimizer AdamW --lr0 0.001 \
+  --epochs 60 --batch-size 32 --name synthetic --experiment A
+python evaluate_detector.py models/detector/synthetic/weights/best.onnx datasets/signs --split validation --select
 ```
+
+`--weights`는 해당 가중치에서 **새 학습**을 시작하고, `--resume RUN/weights/last.pt`는 중단된 학습을 이어간다.
+`optimizer=auto`는 `--lr0`를 무시하므로 학습률을 비교할 때는 optimizer를 명시한다. 실제 적용값은 `best.json`에 남는다.
+신뢰도 임계값은 validation에서 고르고(`--select`가 `best.json`에 저장), test는 `--split test --final`로 마지막에 한 번 본다.
 
 클래스는 경적, STOP, 감속20, 빨강/노랑/초록 신호, 좌/우/직진의 9종이다. 렌더러의 보이는 표면 bbox로 YOLO 라벨을 생성한다.
 학습 데이터에 클래스가 빠져 있으면 소품 배치·경로·카메라 각도를 바꾸어 더 수집한다.
@@ -251,6 +289,5 @@ TensorFlow는 이 모드에서만 필요하며 Isaac Python 3.11과 호환되는
 
 ## 9. 검증 범위
 
-현재 개발 환경에서 치수·기하·카메라 좌표·전처리·데이터 분리·USD 구조와 검출→추적→거리→미션 주행 통합을 검사한다.
-**Ubuntu RTX 5070에서 Isaac Sim 5.1 실제 렌더링, PhysX 접촉/주행, 완주율, GPU 메모리 및 학습 품질은 아직 검증하지 않았다.**
-RTX에서 처음 실행할 때 `--check`, 수동 주행, 교사 주행의 결과와 `summary.json`부터 확인한다.
+2026-10-29 RTX 5070 Ti Laptop(12GB)·Isaac Sim 5.1에서 실제 렌더링·교사 주행·수집·학습·평가를 실행했다.
+결과와 남은 항목은 [검증 기록](validation.md)에 있다.

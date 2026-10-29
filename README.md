@@ -22,9 +22,11 @@ Ubuntu · RTX 5070 · Isaac Sim 5.1을 대상으로 트랙, 4륜 스키드 스�
 - [녹음 전사와 정리](docs/recording/README.md): 시간 표시 전사, 불명확한 구간, 자료별 근거
 - [차량·카메라 설정](configs/rtx.json): 실측값과 추정값의 출처, 난수화 범위
 - [미션 제어 통합](docs/autonomy.md): ONNX 검출·추적·거리 추정·교차로 제어·완료 집계
+- [실습실 현장 체크리스트](docs/field_session.md): 카메라·바퀴 실측, 운동 보정, 실제 주행 세션, Pi 지연 측정 순서
+- [검증 기록](docs/validation.md): 2026-10-29 RTX 실행 결과(물리 진단, 카메라 보정, 학습·평가)
 
 ```bash
-export ISAAC_PY="$HOME/isaacsim/python.sh"
+export ISAAC_PY="$HOME/isaacsim/python.sh"   # pip 설치면 해당 venv의 bin/python
 "$ISAAC_PY" -m pip install -r requirements-sim.txt
 "$ISAAC_PY" run_sim.py --check
 "$ISAAC_PY" run_sim.py --mode manual --seed 1
@@ -33,8 +35,10 @@ export ISAAC_PY="$HOME/isaacsim/python.sh"
 
 차선 주행에 더해 `--missions --detector ...`로 검출·추적·거리 추정·교차로 제어를 연결합니다.
 미션 제어는 RGB, 측정 바퀴 속도와 트랙 지도를 사용하며 시뮬레이터 위치/bbox 정답은 사용하지 않습니다.
-차선/검출 가중치 학습과 카메라·바퀴 보정, RTX에서의 실제 주행 검증은 별도로 진행해야 합니다.
-코드·USD 구조 검사는 수행하지만 실제 RTX 렌더링·PhysX 주행과 학습된 모델의 강건성을 검증한 상태는 아닙니다.
+2026-10-29 RTX 5070 Ti Laptop에서 실제 렌더링·교사 주행·합성 데이터 수집·학습·시뮬레이션 평가를 실행했습니다.
+PhysX 강체 바퀴가 스키드 회전을 재현하지 못해 수집·평가는 운동학 스키드 모델로 구동하며, 카메라는 차량 카메라
+사진에서 추정한 광각 설정입니다. 실차 실측·실제 주행 세션·Pi 측정은 아직 하지 않았습니다([검증 기록](docs/validation.md)).
+실차용 수집(`collect_real.py`)·세션 분할(`split_real.py`)·미세조정·Pi 실행기(`run_vehicle.py`)는 [후속 구현](docs/real_vehicle_plan.md)에 정리했습니다.
 원본 녹음, 사람이 나온 사진, 교재 코드와 학습 결과물은 공개 저장소에 포함하지 않습니다.
 
 ## 파일

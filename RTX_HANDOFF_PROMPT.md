@@ -47,7 +47,9 @@ Git이 없으면 먼저 설치하고, 설치·실행 명령을 사용자에게 �
 트랙/차량/카메라/표지판 USD 생성, 교사 주행, 무작위화 데이터 수집, CNN 차선 정책과
 9종 검출기 학습·ONNX 내보내기, 추적·거리·미션·교차로 제어, 배치 평가까지 구현되어 있습니다.
 개발 기기에서 단위·통합 검사 37개와 작은 생성 데이터 학습 경로 검사를 통과했습니다.
-**실제 RTX 렌더링·PhysX 주행, 주행용 가중치 학습과 강건성 평가는 아직 수행하지 않았습니다.**
+2026-10-29 RTX 실행 결과(렌더링·물리 진단·교사 주행·합성 학습·시뮬레이션 평가)와 후속 구현 현황은
+[검증 기록](docs/validation.md)과 [후속 구현 요구사항](docs/real_vehicle_plan.md#구현-현황-2026-10-29)에 있습니다.
+**실차 실측, 실제 주행 세션, Pi 실행과 실차 성능은 아직 검증하지 않았습니다.**
 학습된 가중치는 저장소에 없습니다. 소프트웨어 검사 통과를 주행 성공으로 보고하지 않습니다.
 
 사용자가 후속 구현으로 **실제 데이터 수집·세션 분리, 실제 데이터 미세조정, 실차 추론/제어 분리,
@@ -70,7 +72,7 @@ Isaac 번들 torch/numpy를 임의로 교체하지 않고 학습 환경을 분�
 ```bash
 lsb_release -a
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
-export ISAAC_PY="$HOME/isaacsim/python.sh"
+export ISAAC_PY="$HOME/isaacsim/python.sh"   # pip 설치면 venv의 bin/python (2026-10-29 기기: ~/isaacsim_env/bin/python)
 "$ISAAC_PY" --version
 "$ISAAC_PY" -m pip install -r requirements-sim.txt
 "$ISAAC_PY" run_sim.py --check

@@ -152,21 +152,18 @@ def make_sign_textures(folder):
                 width=13,
             )
         else:
+            # Car photos (2026-10-14): Korean-style blue disc with a white BENT arrow for
+            # turns (stem up, then left/right) and a straight up arrow for straight.
             # Distinct direction classes; these do not mean "always turn right".
-            points = [
-                (109, 202),
-                (147, 202),
-                (147, 112),
-                (184, 112),
-                (128, 52),
-                (72, 112),
-                (109, 112),
-            ]
-            if name == "direction_right":
-                points = [(256 - y, x) for x, y in points]
-            elif name == "direction_left":
-                points = [(y, 256 - x) for x, y in points]
-            draw.polygon(points, fill="white")
+            if name == "direction_straight":
+                draw.line([(128, 206), (128, 92)], fill="white", width=30)
+                draw.polygon([(78, 104), (178, 104), (128, 46)], fill="white")
+            else:
+                sign = 1 if name == "direction_right" else -1
+                draw.line([(128 - sign * 22, 206), (128 - sign * 22, 112)], fill="white", width=28)
+                draw.line([(128 - sign * 36, 112), (128 + sign * 40, 112)], fill="white", width=28)
+                tip = 128 + sign * 96
+                draw.polygon([(tip - sign * 54, 64), (tip - sign * 54, 160), (tip, 112)], fill="white")
         image.save(folder / f"{name}.png")
     return folder
 
@@ -443,6 +440,7 @@ def set_signal(stage, props, color):
             ]:
                 sh = UsdShade.Shader(stage.GetPrimAtPath(p["path"] + "/" + name + "_Mat/Surface"))
                 sh.GetInput("emissiveColor").Set(Gf.Vec3f(*(rgb if color == name else (0, 0, 0))))
+                # Unlit lamps still look dim green/yellow/red in the car photos.
                 sh.GetInput("diffuseColor").Set(
-                    Gf.Vec3f(*(rgb if color == name else tuple(v * 0.035 for v in rgb)))
+                    Gf.Vec3f(*(rgb if color == name else tuple(v * 0.22 for v in rgb)))
                 )

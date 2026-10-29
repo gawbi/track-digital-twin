@@ -9,3 +9,6 @@ models/
 *.wav
 docs/recording/*.auto.json
 docs/recording/*.large.auto.json
+runs/
+*.pt
+*.onnx

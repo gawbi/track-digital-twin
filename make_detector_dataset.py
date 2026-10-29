@@ -50,6 +50,7 @@ def main():
     p.add_argument("--real-manifest", type=Path, help="Fixed real split (labeled frames only)")
     p.add_argument("--output", type=Path, default=Path("datasets/signs"))
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--stride", type=int, default=1, help="Use every Nth synthetic frame")
     a = p.parse_args()
     if bool(a.data) == bool(a.real_manifest):
         p.error("Give either synthetic DATA or --real-manifest")
@@ -74,7 +75,7 @@ def main():
             if episode["group"] not in groups:
                 continue
             c = episode["metadata"]["config"]["camera"]
-            for frame in episode["frames"]:
+            for frame in episode["frames"][:: a.stride]:
                 if "detections" not in frame:
                     raise ValueError("Missing boxes: recollect using this version of run_sim.py")
                 name = f"e{eidx}-{frame['frame']:06d}"
@@ -89,7 +90,8 @@ def main():
     write_yaml(a.output)
     (a.output / "split.json").write_text(
         json.dumps(
-            {"source": "synthetic", "seed": a.seed, "groups": splits, "counts": counts}, indent=2
+            {"source": "synthetic", "seed": a.seed, "stride": a.stride, "groups": splits,
+             "counts": counts}, indent=2
         )
     )
     print(json.dumps(counts, indent=2))

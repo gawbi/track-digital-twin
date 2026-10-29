@@ -186,6 +186,10 @@ def main():
         help="Validation used to pick the epoch (default: real when a manifest is given)",
     )
     p.add_argument("--experiment", default="", help="Name recorded in metadata, e.g. A/B/C")
+    p.add_argument(
+        "--frame-stride", type=int, default=1, help="Use every Nth synthetic frame (near-duplicates)"
+    )
+    p.add_argument("--workers", type=int, default=8, help="DataLoader workers (JPEG decoding)")
     a = p.parse_args()
     if a.epochs <= 0 or a.batch_size <= 0 or a.lr <= 0:
         p.error("epochs, batch size and learning rate must be positive")
@@ -203,6 +207,8 @@ def main():
     episodes, splits = [], {"train": [], "validation": [], "test": []}
     if a.data:
         episodes = read_episodes(a.data)
+        for episode in episodes:
+            episode["frames"] = episode["frames"][:: a.frame_stride]
         splits = split_groups(episodes, a.seed)
     # Every episode must use one action scale; ONNX metadata has one fixed contract.
     scales = {
@@ -238,20 +244,20 @@ def main():
             Frames(episodes, sim_train, True, real_train),
             batch_size=a.batch_size,
             shuffle=True,
-            num_workers=4,
+            num_workers=a.workers,
         ),
         "validation": DataLoader(
             Frames(episodes, splits["validation"] if select_on == "synthetic" else [], False,
                    real.get("validation", []) if select_on == "real" else []),
             batch_size=a.batch_size,
-            num_workers=4,
+            num_workers=a.workers,
         ),
     }
     if not len(loaders["train"].dataset) or not len(loaders["validation"].dataset):
         raise ValueError("Empty training or validation set for the chosen sources")
     if a.real_manifest and select_on == "synthetic":
         loaders["real_validation"] = DataLoader(
-            Frames([], [], False, real["validation"]), batch_size=a.batch_size, num_workers=4
+            Frames([], [], False, real["validation"]), batch_size=a.batch_size, num_workers=a.workers
         )
     model = LanePolicy().to(a.device)
     if a.init_checkpoint:
@@ -312,6 +318,7 @@ def main():
         max_yaw_rad_s=max_yaw,
         experiment=a.experiment,
         seed=a.seed,
+        frame_stride=a.frame_stride,
         splits=splits,
         synthetic_seed_history=sorted(history_seeds),
         train_on=train_on,

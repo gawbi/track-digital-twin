@@ -87,7 +87,8 @@ def main():
             flipud=0.0,
             mosaic=0.3,
             close_mosaic=10,
-            project=a.project,
+            # Absolute: Ultralytics 8.4 nests relative projects under runs/detect/.
+            project=str(Path(a.project).resolve()),
             name=a.name,
             exist_ok=False,
         )

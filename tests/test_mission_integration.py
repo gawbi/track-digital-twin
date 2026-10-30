@@ -42,6 +42,20 @@ class MissionIntegrationTests(unittest.TestCase):
         self.cfg, self.layout = load_inputs()
         self.rgb = np.zeros((480, 640, 3), dtype=np.uint8)
 
+    def test_sign_without_pink_line_on_route_is_ignored_not_a_stop(self):
+        # On the central N-S road no pink line lies ahead: a horn sign seen here
+        # belongs to another road (or is far away) and must not stop the car.
+        initial = (0.0, 0.6, -math.pi / 2)
+        detector = StaticDetector(CameraGeometry(self.cfg["camera"]), "horn", (0.4, -0.08))
+        driver = MissionDriver(self.cfg, self.layout, initial, detector)
+        for i in range(8):
+            command, horn, telemetry = driver.step(self.rgb, i / 30, i / 30, 0.0, 0.0, (0.1, 0.0))
+            self.assertFalse(horn)
+        self.assertEqual(command, (0.1, 0.0))
+        self.assertIsNone(telemetry["fault"])
+        ignored = [e for e in driver.events if e["event"] == "sign_not_on_route_ignored"]
+        self.assertEqual(len(ignored), 1)
+
     def test_horn_through_detector_tracking_distance_and_command_once(self):
         initial = (-0.95, 0.8725, 0.0)
         detector = StaticDetector(CameraGeometry(self.cfg["camera"]), "horn", (0.4, -0.08))

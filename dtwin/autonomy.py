@@ -136,6 +136,7 @@ class MissionDriver:
         self.speed_pending = set()
         self.signal_pending = {}
         self.last_guard = None
+        self.ignored_signs = set()
 
     def step(self, rgb, now_s, capture_s, left_rad_s, right_rad_s, lane_command):
         if rgb.shape[:2] != (self.geometry.height, self.geometry.width):
@@ -238,7 +239,11 @@ class MissionDriver:
                 )
             else:
                 if pink_distance is None:
-                    transient.append("pink_deadline_not_localized")
+                    # No pink line of OUR road ahead is tied to this sign (yet): it is
+                    # still far away or belongs to another road. Not ours to act on.
+                    if key not in self.ignored_signs:
+                        self.ignored_signs.add(key)
+                        events.append({"event": "sign_not_on_route_ignored", "id": key, "kind": kind})
                     continue
                 observations.append(
                     Observation(

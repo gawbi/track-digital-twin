@@ -310,6 +310,11 @@ class PathFollower:
             info, teacher_yaw_ratio=self.yaw_ratio, teacher_yaw_bias=self.yaw_bias_per_speed
         )
 
+    def record_applied(self, speed, omega):
+        """The command actually applied differs from ours (injected noise)."""
+        if self._last is not None:
+            self._last = (self._last[0], speed, omega)
+
     def _command(self, x, y, yaw):
         distance, s, _, tangent = self.project(x, y)
         target = self.at(s + self.lookahead)

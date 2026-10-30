@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import subprocess
 from pathlib import Path
 
@@ -24,6 +25,16 @@ def parser():
     p.add_argument("--duration", type=float)
     p.add_argument("--headless", action="store_true")
     p.add_argument("--record", action="store_true", help="Save camera images for training")
+    p.add_argument(
+        "--offroad-grace", type=float, help="Override simulation.off_track_grace_s (collection)"
+    )
+    p.add_argument(
+        "--action-noise",
+        type=float,
+        default=0.0,
+        help="Expert mode: std (rad/s) of correlated noise added to the APPLIED yaw command; "
+        "labels stay the clean teacher command (DART-style recovery data)",
+    )
     p.add_argument("--output", type=Path, default=ROOT / "outputs")
     p.add_argument("--policy", type=Path, help="ONNX file with matching .json metadata")
     p.add_argument(
@@ -126,6 +137,8 @@ def main():
     cfg, params = sample_episode(base, args.seed, args.randomize, args.stress)
     if args.randomize or args.stress:
         randomize_props(cfg, layout, args.seed)
+    if args.offroad_grace is not None:
+        cfg["simulation"]["off_track_grace_s"] = args.offroad_grace
     if args.duration is not None:
         if args.duration <= 0:
             raise SystemExit("--duration must be positive")
@@ -202,6 +215,8 @@ def main():
             summary["control_sources"] = (
                 "RGB detector + measured wheel joints + configured map/start; no simulator pose or labels"
             )
+        params["action_noise_rad_s"] = args.action_noise if args.mode == "expert" else 0.0
+        noise_rng, noise = random.Random(args.seed ^ 0xD4A7), 0.0
         recorder = Recorder(output, cfg, params, args.mode, args.route, args.record)
         command = (0.0, 0.0)
         off_frames = 0
@@ -229,6 +244,17 @@ def main():
                     break
             if args.mode == "expert":
                 command = expert_v, expert_w
+                if args.action_noise > 0:
+                    # Ornstein-Uhlenbeck (0.5 s correlation) yaw disturbance; the
+                    # teacher learns of it through its applied-command record.
+                    decay = math.exp(-sim.dt / 0.5)
+                    noise = noise * decay + noise_rng.gauss(0, args.action_noise) * math.sqrt(
+                        1 - decay**2
+                    )
+                    applied = expert_v, max(
+                        -simcfg["max_yaw_rad_s"], min(simcfg["max_yaw_rad_s"], expert_w + noise)
+                    )
+                    follower.record_applied(*applied)
             elif args.mode == "onnx":
                 command = policy.command(rgb)
             else:
@@ -265,6 +291,7 @@ def main():
                 pose_xy_yaw=list(pose),
                 linear_m_s=command[0],
                 angular_rad_s=command[1],
+                applied_command=list(applied if args.action_noise > 0 and args.mode == "expert" else command),
                 detections=sim.last_boxes,
                 **footprint,
                 **route_info,
@@ -277,7 +304,7 @@ def main():
                 summary["status"] = "offroad"
                 break
             sim.set_signal(["red", "green", "yellow"][int(sim.frame * sim.dt // 8) % 3])
-            sim.step(*command)
+            sim.step(*(applied if args.action_noise > 0 and args.mode == "expert" else command))
         if summary["status"] == "running":
             summary["status"] = (
                 "duration_completed" if sim.frame >= maximum_frames else "window_closed"

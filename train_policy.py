@@ -62,7 +62,7 @@ def split_groups(episodes, seed):
     return {"test": groups[:n], "validation": groups[n : 2 * n], "train": groups[2 * n :]}
 
 
-def read_episodes(root):
+def read_episodes(root, recovery_within_m=0.0):
     episodes = []
     for metadata_path in sorted(Path(root).rglob("episode.json")):
         metadata = json.loads(metadata_path.read_text())
@@ -70,7 +70,14 @@ def read_episodes(root):
             continue
         frames_path = metadata_path.parent / "frames.jsonl"
         frames = [json.loads(line) for line in frames_path.read_text().splitlines() if line.strip()]
-        frames = [f for f in frames if "image" in f and f["footprint_on_road"]]
+        # Off-road frames are kept only while the teacher is recovering close to the
+        # route (noise-injected collection); their labels are the correction.
+        frames = [
+            f
+            for f in frames
+            if "image" in f
+            and (f["footprint_on_road"] or f.get("route_distance_m", 1) <= recovery_within_m)
+        ]
         if frames:
             episodes.append(
                 dict(
@@ -161,7 +168,9 @@ def sha256(path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("data", type=Path, nargs="?", help="Synthetic expert episodes (run_sim --record)")
+    p.add_argument(
+        "data", type=Path, nargs="*", help="Synthetic expert episode roots (run_sim --record)"
+    )
     p.add_argument("--output", type=Path, default=Path("models/lane"))
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--batch-size", type=int, default=64)
@@ -190,6 +199,12 @@ def main():
         "--frame-stride", type=int, default=1, help="Use every Nth synthetic frame (near-duplicates)"
     )
     p.add_argument("--workers", type=int, default=8, help="DataLoader workers (JPEG decoding)")
+    p.add_argument(
+        "--recovery-within",
+        type=float,
+        default=0.0,
+        help="Also train on off-road teacher frames within this route distance (m)",
+    )
     a = p.parse_args()
     if a.epochs <= 0 or a.batch_size <= 0 or a.lr <= 0:
         p.error("epochs, batch size and learning rate must be positive")
@@ -206,7 +221,9 @@ def main():
     torch.manual_seed(a.seed)
     episodes, splits = [], {"train": [], "validation": [], "test": []}
     if a.data:
-        episodes = read_episodes(a.data)
+        episodes = []
+        for root in a.data:
+            episodes += read_episodes(root, a.recovery_within)
         for episode in episodes:
             episode["frames"] = episode["frames"][:: a.frame_stride]
         splits = split_groups(episodes, a.seed)
@@ -319,6 +336,8 @@ def main():
         experiment=a.experiment,
         seed=a.seed,
         frame_stride=a.frame_stride,
+        recovery_within_m=a.recovery_within,
+        synthetic_roots=[str(root) for root in a.data],
         splits=splits,
         synthetic_seed_history=sorted(history_seeds),
         train_on=train_on,

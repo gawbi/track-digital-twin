@@ -22,6 +22,8 @@ def main():
     p.add_argument("--missions", action="store_true")
     p.add_argument("--detector", type=Path)
     p.add_argument("--calibration", type=Path)
+    p.add_argument("--action-noise", type=float, default=0.0, help="collect: DART yaw noise rad/s")
+    p.add_argument("--offroad-grace", type=float, help="collect: seconds off road before stopping")
     a = p.parse_args()
     if a.mode == "evaluate" and not a.policy:
         p.error("evaluate requires --policy")
@@ -71,7 +73,9 @@ def main():
             str(a.output.resolve()),
         ]
         if a.mode == "collect":
-            command.append("--record")
+            command += ["--record", "--action-noise", str(a.action_noise)]
+            if a.offroad_grace is not None:
+                command += ["--offroad-grace", str(a.offroad_grace)]
         else:
             command += ["--policy", str(a.policy.resolve())]
         if a.stress:

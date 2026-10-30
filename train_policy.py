@@ -66,7 +66,8 @@ def read_episodes(root, recovery_within_m=0.0):
     episodes = []
     for metadata_path in sorted(Path(root).rglob("episode.json")):
         metadata = json.loads(metadata_path.read_text())
-        if metadata["mode"] not in {"expert", "manual"}:
+        # dagger: policy-driven states with teacher labels (run_sim --mode dagger).
+        if metadata["mode"] not in {"expert", "manual", "dagger"}:
             continue
         frames_path = metadata_path.parent / "frames.jsonl"
         frames = [json.loads(line) for line in frames_path.read_text().splitlines() if line.strip()]

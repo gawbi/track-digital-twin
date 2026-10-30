@@ -24,6 +24,7 @@ def main():
     p.add_argument("--calibration", type=Path)
     p.add_argument("--action-noise", type=float, default=0.0, help="collect: DART yaw noise rad/s")
     p.add_argument("--offroad-grace", type=float, help="collect: seconds off road before stopping")
+    p.add_argument("--dagger-policy", type=Path, help="collect: policy drives, teacher labels")
     a = p.parse_args()
     if a.mode == "evaluate" and not a.policy:
         p.error("evaluate requires --policy")
@@ -43,7 +44,7 @@ def main():
         if any(str(seed) in used for seed in range(first, first + a.count)):
             p.error("Evaluation seeds overlap training, validation or offline test scenes")
     a.output.mkdir(parents=True, exist_ok=True)
-    sim_mode = "expert" if a.mode == "collect" else "onnx"
+    sim_mode = "onnx" if a.mode == "evaluate" else "dagger" if a.dagger_policy else "expert"
     suffix = "-missions" if a.missions else ""
     existing = [
         a.output / f"{sim_mode}-{a.route}-seed{seed}{suffix}"
@@ -61,7 +62,7 @@ def main():
             str(Path(__file__).with_name("run_sim.py")),
             "--headless",
             "--mode",
-            "expert" if a.mode == "collect" else "onnx",
+            sim_mode,
             "--seed",
             str(seed),
             "--randomize",
@@ -76,6 +77,8 @@ def main():
             command += ["--record", "--action-noise", str(a.action_noise)]
             if a.offroad_grace is not None:
                 command += ["--offroad-grace", str(a.offroad_grace)]
+            if a.dagger_policy:
+                command += ["--policy", str(a.dagger_policy.resolve())]
         else:
             command += ["--policy", str(a.policy.resolve())]
         if a.stress:

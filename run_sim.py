@@ -17,7 +17,7 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", type=Path, default=ROOT / "configs/rtx.json")
     p.add_argument("--check", action="store_true")
-    p.add_argument("--mode", choices=["manual", "expert", "onnx"], default="manual")
+    p.add_argument("--mode", choices=["manual", "expert", "onnx", "dagger"], default="manual")
     p.add_argument("--route", choices=["outer", "inner"], default="outer")
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--randomize", action="store_true")
@@ -123,7 +123,7 @@ def main():
         return
     if args.headless and args.mode == "manual" and not args.legacy_script:
         raise SystemExit("Headless manual mode has no input: choose --mode expert or --mode onnx")
-    if args.mode == "onnx" and not args.policy:
+    if args.mode in {"onnx", "dagger"} and not args.policy:
         raise SystemExit("--mode onnx requires --policy")
     if args.missions and (args.mode != "onnx" or not args.detector or args.legacy_script):
         raise SystemExit(
@@ -199,7 +199,7 @@ def main():
             run_book(sim, args.legacy_script, args.legacy_model)
             summary["status"] = "legacy_script_finished"
             return
-        if args.mode == "onnx":
+        if args.mode in {"onnx", "dagger"}:
             from dtwin.policy import OnnxPolicy
 
             policy = OnnxPolicy(args.policy)
@@ -223,6 +223,8 @@ def main():
                 "RGB detector + measured wheel joints + configured map/start; no simulator pose or labels"
             )
         params["action_noise_rad_s"] = args.action_noise if args.mode == "expert" else 0.0
+        # Expert noise and DAgger apply a different command than the recorded label.
+        uses_applied = args.mode == "dagger" or (args.mode == "expert" and args.action_noise > 0)
         noise_rng, noise = random.Random(args.seed ^ 0xD4A7), 0.0
         recorder = Recorder(output, cfg, params, args.mode, args.route, args.record)
         command = (0.0, 0.0)
@@ -264,6 +266,18 @@ def main():
                     follower.record_applied(*applied)
             elif args.mode == "onnx":
                 command = policy.command(rgb)
+            elif args.mode == "dagger":
+                # The camera policy drives; the teacher labels every frame and takes
+                # over only when the car drifts, so data covers the policy's own states.
+                takeover = (
+                    route_info["route_distance_m"] > 0.04
+                    or footprint["min_clearance_m"] < 0.01
+                    or abs(route_info["heading_error_rad"]) > 0.6
+                )
+                applied = (expert_v, expert_w) if takeover else policy.command(rgb)
+                follower.record_applied(*applied)
+                command = expert_v, expert_w
+                route_info["teacher_takeover"] = takeover
             else:
                 import time
 
@@ -298,7 +312,7 @@ def main():
                 pose_xy_yaw=list(pose),
                 linear_m_s=command[0],
                 angular_rad_s=command[1],
-                applied_command=list(applied if args.action_noise > 0 and args.mode == "expert" else command),
+                applied_command=list(applied if uses_applied else command),
                 detections=sim.last_boxes,
                 **footprint,
                 **route_info,
@@ -311,7 +325,7 @@ def main():
                 summary["status"] = "offroad"
                 break
             sim.set_signal(["red", "green", "yellow"][int(sim.frame * sim.dt // 8) % 3])
-            sim.step(*(applied if args.action_noise > 0 and args.mode == "expert" else command))
+            sim.step(*(applied if uses_applied else command))
         if summary["status"] == "running":
             summary["status"] = (
                 "duration_completed" if sim.frame >= maximum_frames else "window_closed"

@@ -87,6 +87,28 @@ class MapContext:
                 candidates.append((distance, name))
         return min(candidates)[1] if candidates else None
 
+    def pink_by_anchor(self, anchor, pose, max_score=0.35):
+        """Nearest pink line to a sign position that the car has not crossed (any heading)."""
+        best = None
+        for name, mark in self.marks.items():
+            if mark["kind"] != "pink":
+                continue
+            score = math.dist(anchor, nearest_on_segment(anchor, *mark["segment"]))
+            if score < max_score and (best is None or score < best[0]):
+                best = (score, name)
+        return None if best is None else best[1]
+
+    def normal_distance(self, name, pose, side):
+        """Front bumper to the pink line measured along the line normal; ``side`` (+1/-1)
+        fixes which side counts as "before" so the value goes negative after crossing."""
+        mark = self.marks[name]
+        (x0, y0), (x1, y1) = mark["segment"]
+        length = math.hypot(x1 - x0, y1 - y0)
+        nx, ny = -(y1 - y0) / length, (x1 - x0) / length
+        fx = pose[0] + math.cos(pose[2]) * self.front
+        fy = pose[1] + math.sin(pose[2]) * self.front
+        return side * ((mark["center"][0] - fx) * nx + (mark["center"][1] - fy) * ny)
+
     def distance(self, name, pose, now):
         if name is None:
             return None, "unavailable"
@@ -137,6 +159,7 @@ class MissionDriver:
         self.signal_pending = {}
         self.last_guard = None
         self.ignored_signs = set()
+        self.direction_votes = {}
 
     def step(self, rgb, now_s, capture_s, left_rad_s, right_rad_s, lane_command):
         if rgb.shape[:2] != (self.geometry.height, self.geometry.width):
@@ -188,23 +211,44 @@ class MissionDriver:
                     confidence=track.confidence,
                     world=encounter.world,
                     last_seen=now_s,
+                    first_distance=self.retained.get(key, {}).get(
+                        "first_distance", self.odometry.distance
+                    ),
+                    tied_late=self.retained.get(key, {}).get("tied_late", False),
                 )
             self.last_capture = capture_s
         for key, obj in list(self.retained.items()):
             if key in self.controller.done:
                 continue
-            if now_s - obj["last_seen"] > self.settings["observation_memory_s"] and not obj[
-                "kind"
-            ].startswith("signal_"):
-                continue
             context = self.context[key]
+            # A mission sign seen BEFORE a corner pairs with the pink line AFTER it: keep it
+            # (even out of view/behind) until a pink line ahead matches or the budget ends.
+            pending = (
+                obj["kind"] in {"horn", "stop", "speed20"}
+                and context["pink"] is None
+                and self.odometry.distance - obj["first_distance"]
+                <= self.settings.get("sign_pending_m", 1.2)
+            )
+            if pending:
+                name = self.map.pink_by_anchor(obj["world"], pose)
+                if name is not None:
+                    side = 1.0 if self.map.normal_distance(name, pose, 1.0) >= 0 else -1.0
+                    context.update(pink=name, pink_side=side)
+                    obj["tied_late"] = True
+            keep = pending or obj["tied_late"]
+            if (
+                now_s - obj["last_seen"] > self.settings["observation_memory_s"]
+                and not obj["kind"].startswith("signal_")
+                and not keep
+            ):
+                continue
             confidence = obj["confidence"]
             if confidence < self.settings["confidence"]:
                 continue
             local = to_vehicle(obj["world"], pose)
-            if local[0] < -0.05:
+            if local[0] < -0.05 and not keep:
                 continue
-            pink_distance, pink_source = self.map.distance(context["pink"], pose, now_s)
+            pink_distance, pink_source = self._pink_distance(context, pose, now_s)
             stop_distance, stop_source = self.map.distance(context["crosswalk"], pose, now_s)
             common = dict(encounter_id=key, confidence=confidence, junction_id=context["junction"])
             kind = obj["kind"]
@@ -275,9 +319,10 @@ class MissionDriver:
         active_observations = observations if not self.fault and not transient else []
         if self.controller.holding:
             key, kind = self.controller.holding
-            distance, _ = self.map.distance(
-                self.context[key]["pink" if kind == "stop" else "crosswalk"], pose, now_s
-            )
+            if kind == "stop":
+                distance, _ = self._pink_distance(self.context[key], pose, now_s)
+            else:
+                distance, _ = self.map.distance(self.context[key]["crosswalk"], pose, now_s)
             if distance is not None and distance <= 0:
                 self.fault = self.fault or "stop_deadline_missed"
         output = self.controller.update(
@@ -297,10 +342,22 @@ class MissionDriver:
                 )
                 if output.direction_priority == 2:
                     self.signal_pending[output.direction_encounter_id] = context["junction"]
-        # Multiple ordinary direction signs for the same junction are a conflict.
+        # Direction evidence is summed per junction over frames and encounters, so one
+        # misread far/near frame cannot flip the turn. Only a split vote is a conflict.
         for observation in observations:
-            if observation.kind == "direction":
-                self.navigator.request(observation.junction_id, observation.direction, 1)
+            if observation.kind == "direction" and observation.junction_id:
+                votes = self.direction_votes.setdefault(observation.junction_id, {})
+                votes[observation.direction] = (
+                    votes.get(observation.direction, 0.0) + observation.confidence
+                )
+        for junction, votes in self.direction_votes.items():
+            best = max(votes, key=votes.get)
+            if votes[best] < 2 / 3 * sum(votes.values()):
+                self.navigator.fault = self.navigator.fault or "conflicting_direction_requests"
+            elif not (self.navigator.active == junction and self.navigator.phase != "approach"):
+                previous = self.navigator.requests.get(junction)
+                if previous is None or previous[0] <= 1:
+                    self.navigator.requests[junction] = (1, best)
         if self.fault or transient or output.stop:
             command = (0.0, 0.0)
         else:
@@ -325,7 +382,7 @@ class MissionDriver:
             ):
                 self._complete(event["id"], "stop", events)
         for key in list(self.speed_pending):
-            distance, _ = self.map.distance(self.context[key]["pink"], pose, now_s)
+            distance, _ = self._pink_distance(self.context[key], pose, now_s)
             if distance is not None and distance <= 0:
                 self.fault = self.fault or "slowdown_deadline_missed"
             elif (
@@ -337,7 +394,7 @@ class MissionDriver:
                 self.speed_pending.remove(key)
         if self.controller.holding and self.controller.holding[1] == "stop":
             key = self.controller.holding[0]
-            distance, _ = self.map.distance(self.context[key]["pink"], pose, now_s)
+            distance, _ = self._pink_distance(self.context[key], pose, now_s)
             if distance is not None and distance <= 0:
                 self.fault = self.fault or "stop_deadline_missed"
         for event in list(events):
@@ -350,6 +407,7 @@ class MissionDriver:
                         "kind"
                     ].startswith("direction_"):
                         self.controller.done.add(key)
+                self.direction_votes.pop(event["junction"], None)
         horn = output.horn and self.fault is None and not transient
         if horn:
             for event in output.events:
@@ -384,6 +442,12 @@ class MissionDriver:
         )
         self.last_guard = telemetry["fault"]
         return command, horn, telemetry
+
+    def _pink_distance(self, context, pose, now_s):
+        if context.get("pink") and "pink_side" in context:
+            distance = self.map.normal_distance(context["pink"], pose, context["pink_side"])
+            return distance, "configured_map+wheel_odometry(normal)"
+        return self.map.distance(context.get("pink"), pose, now_s)
 
     def _complete(self, key, kind, events):
         if key not in self.completed and self.fault is None:

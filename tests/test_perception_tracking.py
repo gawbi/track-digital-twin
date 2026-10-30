@@ -102,9 +102,21 @@ class DistanceTests(unittest.TestCase):
             np.testing.assert_allclose(point, [0.6, 0.08], atol=1e-7)
         self.assertIsNone(camera.intersect(320, -1000))
 
+    def test_skid_odometry_uses_calibrated_effective_width(self):
+        cfg, _ = load_inputs()
+        v = cfg["vehicle"]
+        odom = WheelOdometry(v, (0.0, 0.0, 0.0))
+        odom.update(0.0, -3.0, 3.0)
+        odom.update(0.1, -3.0, 3.0)
+        # Ground yaw with efficiency eta = ideal yaw * eta = r*(R-L)/(track/eta).
+        ideal = v["wheel_radius_m"] * 6.0 / v["track_width_m"]
+        self.assertAlmostEqual(odom.yaw_rate, ideal * v["skid_yaw_efficiency"], places=3)
+
     def test_encoder_units_turn_in_place_and_delayed_pose_interpolation(self):
         cfg, _ = load_inputs()
-        odom = WheelOdometry(cfg["vehicle"], (0.0, 0.0, 0.0))
+        # Ideal (non-scrubbing) wheels: effective width equals the wheel track.
+        vehicle = dict(cfg["vehicle"], odometry_track_width_m=cfg["vehicle"]["track_width_m"])
+        odom = WheelOdometry(vehicle, (0.0, 0.0, 0.0))
         odom.update(0.0, 2.0, 2.0)
         odom.update(0.1, 2.0, 2.0)
         self.assertAlmostEqual(odom.pose[0], 0.0065)
@@ -133,3 +145,20 @@ class DistanceTests(unittest.TestCase):
         np.testing.assert_allclose(
             camera.intersect(*pixel, plane_height_m=0.103), [0.5, 0.07], atol=1e-5
         )
+
+
+class DirectionVoteTests(unittest.TestCase):
+    def test_close_range_misread_does_not_split_a_direction_sign(self):
+        from dtwin.tracking import ObjectTracker
+
+        tracker = ObjectTracker(min_hits=3)
+        box = [500, 180, 560, 245]
+        stream = ["direction_straight"] * 6 + ["direction_right"] * 3
+        confidence = {"direction_straight": 0.92, "direction_right": 0.65}
+        for i, kind in enumerate(stream):
+            tracks = tracker.update(
+                [{"class": kind, "xyxy": box, "confidence": confidence[kind], "source": "vision"}],
+                i / 30,
+            )
+        self.assertEqual(len(tracker.tracks), 1)
+        self.assertEqual(tracks[0].kind, "direction_straight")

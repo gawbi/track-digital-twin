@@ -40,6 +40,8 @@ class MissionIntegrationTests(unittest.TestCase):
 
     def setUp(self):
         self.cfg, self.layout = load_inputs()
+        # These scenarios move the car with ideal wheel kinematics (no skid scrub).
+        self.cfg["vehicle"]["odometry_track_width_m"] = self.cfg["vehicle"]["track_width_m"]
         self.rgb = np.zeros((480, 640, 3), dtype=np.uint8)
 
     def test_sign_without_pink_line_on_route_is_ignored_not_a_stop(self):

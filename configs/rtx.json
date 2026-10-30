@@ -11,6 +11,7 @@
     "drive_model": "결정 2026-10-29: Isaac 5.1 PhysX 강체 바퀴 접촉은 전진 중 스키드 회전을 명령의 3~9%만 재현(tools/physics_probe.py). 수집·평가는 kinematic_skid, physx는 진단용",
     "skid_yaw_efficiency": "추정: 쿨롱 마찰 준정적 계산 0.46(축간 14/좌우 13cm), 실차 제자리·원호 회전율 측정 후 보정",
     "motor_time_constant_s": "추정: TT 기어모터 응답, 실차 영상/엔코더로 보정",
+    "odometry_track_width_m": "추정: 스키드 회전을 반영한 바퀴 odometry 유효 좌우 간격 = 13cm / η 0.6. tools/motion_calibration.py의 η 실측으로 교체",
     "wheel_collision": "physx 진단 모드 전용: 실린더 충돌체는 회전 중 차체가 넘어져 구 충돌체 사용",
     "mission_defaults": "추정: STOP 1초, 감속배율 0.5, 경적 0.2초 및 제동·회전 설정은 현장 규칙/실측 보정 필요. 빨간 신호 약 1초는 녹음/캡처 근거"
   },
@@ -20,7 +21,8 @@
     "wheel_width_m": 0.03, "wheelbase_m": 0.14, "mass_kg": 0.9,
     "max_wheel_rad_s": 22.0, "wheel_torque_nm": 0.12,
     "drive_damping": 0.03, "friction": 0.65,
-    "wheel_collision": "sphere", "skid_yaw_efficiency": 0.6, "motor_time_constant_s": 0.08
+    "wheel_collision": "sphere", "skid_yaw_efficiency": 0.6, "motor_time_constant_s": 0.08,
+    "odometry_track_width_m": 0.2167
   },
   "camera": {
     "width": 640, "height": 480, "x_m": 0.13, "z_m": 0.07,
@@ -58,6 +60,7 @@
     "encounter_merge_m": 0.16, "revisit_distance_m": 0.8,
     "max_frame_age_s": 0.2, "observation_memory_s": 1.5, "mark_memory_s": 2.0,
     "max_mark_distance_m": 1.1, "max_sign_distance_m": 0.9, "map_match_m": 0.12,
+    "sign_pending_m": 1.2,
     "pink_margin_m": 0.02, "stop_dwell_s": 1.0, "red_dwell_s": 1.0,
     "slowdown_scale": 0.5, "braking_m_s2": 0.3, "horn_duration_s": 0.2,
     "yellow_behavior": "stop", "stopped_speed_m_s": 0.015,
@@ -73,6 +76,9 @@
     {"id": "signal", "kind": "signal", "spot": "block-SW-NE", "yaw_deg": 180},
     {"id": "direction_north", "kind": "direction_straight", "spot": "block-NW-NE", "yaw_deg": -90},
     {"id": "direction_center", "kind": "direction_right", "spot": "block-NW-SE", "yaw_deg": -90},
-    {"id": "direction_south", "kind": "direction_left", "spot": "block-SW-SE", "yaw_deg": -90}
+    {"id": "direction_south", "kind": "direction_left", "spot": "block-SW-SE", "yaw_deg": -90},
+    {"id": "direction_t_east", "kind": "direction_straight", "spot": "block-NE-SE", "yaw_deg": 180},
+    {"id": "direction_t_south", "kind": "direction_straight", "spot": "block-SE-SW", "yaw_deg": 90},
+    {"id": "direction_t_west", "kind": "direction_straight", "spot": "block-SW-NW", "yaw_deg": 0}
   ]
 }

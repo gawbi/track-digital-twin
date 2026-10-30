@@ -7,7 +7,11 @@ from .perception import iou
 
 
 def family(kind):
-    return "signal" if kind.startswith("signal_") else kind
+    # One physical signal changes color; one direction sign may be misread between
+    # left/right/straight from frame to frame. Both stay one track.
+    if kind.startswith("signal_"):
+        return "signal"
+    return "direction" if kind.startswith("direction_") else kind
 
 
 @dataclass
@@ -20,6 +24,7 @@ class Track:
     hits: int = 1
     candidate: str = ""
     color_hits: int = 0
+    votes: dict = field(default_factory=dict)
 
 
 class ObjectTracker:
@@ -65,14 +70,19 @@ class ObjectTracker:
                 t.color_hits += 1
             else:
                 t.candidate, t.color_hits = d["class"], 1
+            if family(d["class"]) == "direction":
+                # The arrow does not change: confidence-weighted vote over the track.
+                t.votes[d["class"]] = t.votes.get(d["class"], 0.0) + d["confidence"]
+                t.kind = max(t.votes, key=t.votes.get)
             # Red evidence takes effect immediately; releasing it needs two frames.
-            if d["class"] == "signal_red" or t.color_hits >= 2:
+            elif d["class"] == "signal_red" or t.color_hits >= 2:
                 t.kind = d["class"]
         for j, d in enumerate(detections):
             if j not in used_detections:
                 i = self.next_id
                 self.next_id += 1
                 self.tracks[i] = Track(i, d["class"], list(d["xyxy"]), d["confidence"], timestamp)
+                self.tracks[i].votes = {d["class"]: d["confidence"]}
         return [
             t for t in self.tracks.values() if t.hits >= self.min_hits and t.last_seen == timestamp
         ]

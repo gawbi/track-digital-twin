@@ -26,6 +26,13 @@ def parser():
     p.add_argument("--headless", action="store_true")
     p.add_argument("--record", action="store_true", help="Save camera images for training")
     p.add_argument(
+        "--policy-speed-scale",
+        type=float,
+        default=1.0,
+        help="ONNX mode: scale linear and angular commands together (same path curvature, "
+        "more reaction time), like run_vehicle.py --speed-scale",
+    )
+    p.add_argument(
         "--chase-video",
         action="store_true",
         help="Also record a display-only overhead view (images_chase/) for videos",
@@ -52,6 +59,12 @@ def parser():
         "--missions",
         action="store_true",
         help="Vision detector + wheel encoders + map mission control (ONNX mode)",
+    )
+    p.add_argument(
+        "--teacher-lane-diagnostic",
+        action="store_true",
+        help="Missions with the privileged teacher as LANE input (--mode expert). Checks the "
+        "sign/signal pipeline separately; never counts as camera autonomy",
     )
     p.add_argument(
         "--detector", type=Path, help="YOLO11 raw ONNX detector with matching .json metadata"
@@ -125,14 +138,16 @@ def main():
         raise SystemExit("Headless manual mode has no input: choose --mode expert or --mode onnx")
     if args.mode in {"onnx", "dagger"} and not args.policy:
         raise SystemExit("--mode onnx requires --policy")
-    if args.missions and (args.mode != "onnx" or not args.detector or args.legacy_script):
+    lane_ok = args.mode == "onnx" or (args.mode == "expert" and args.teacher_lane_diagnostic)
+    if args.missions and (not lane_ok or not args.detector or args.legacy_script):
         raise SystemExit(
-            "--missions requires --mode onnx --policy ... --detector ... and excludes the legacy bridge"
+            "--missions requires --mode onnx --policy ... --detector ... (or --mode expert "
+            "--teacher-lane-diagnostic) and excludes the legacy bridge"
         )
     if args.missions and "missions" not in base:
         raise SystemExit("Missing missions settings; start with configs/rtx.json")
     if args.missions:
-        for path in [args.policy, args.detector]:
+        for path in [args.detector] + ([args.policy] if args.mode == "onnx" else []):
             if not path.is_file() or not path.with_suffix(".json").is_file():
                 raise SystemExit(f"Model or export metadata is missing: {path}")
     if args.legacy_script and (not args.legacy_model or args.headless):
@@ -222,6 +237,8 @@ def main():
             summary["control_sources"] = (
                 "RGB detector + measured wheel joints + configured map/start; no simulator pose or labels"
             )
+            if args.teacher_lane_diagnostic:
+                summary["lane_source"] = "privileged teacher (diagnostic only, not autonomy)"
         params["action_noise_rad_s"] = args.action_noise if args.mode == "expert" else 0.0
         # Expert noise and DAgger apply a different command than the recorded label.
         uses_applied = args.mode == "dagger" or (args.mode == "expert" and args.action_noise > 0)
@@ -265,7 +282,8 @@ def main():
                     )
                     follower.record_applied(*applied)
             elif args.mode == "onnx":
-                command = policy.command(rgb)
+                linear, angular = policy.command(rgb)
+                command = linear * args.policy_speed_scale, angular * args.policy_speed_scale
             elif args.mode == "dagger":
                 # The camera policy drives; the teacher labels every frame and takes
                 # over only when the car drifts, so data covers the policy's own states.
@@ -306,6 +324,8 @@ def main():
                 )
                 if horn:
                     sim.horn(base["missions"]["horn_duration_s"])
+                if args.mode == "expert":
+                    follower.record_applied(*command)  # missions may stop/slow the teacher
             record = dict(
                 frame=sim.frame,
                 time_s=sim.frame * sim.dt,

@@ -105,7 +105,10 @@ def to_vehicle(point, pose):
 
 class WheelOdometry:
     def __init__(self, vehicle, initial_pose):
-        self.radius, self.width = vehicle["wheel_radius_m"], vehicle["track_width_m"]
+        # Skid steer: wheels scrub sideways, so yaw = r*(R-L)/effective width where the
+        # effective width (= track / yaw efficiency) is calibrated on the real car.
+        self.radius = vehicle["wheel_radius_m"]
+        self.width = vehicle.get("odometry_track_width_m", vehicle["track_width_m"])
         self.pose = tuple(initial_pose)
         self.distance = 0.0
         self.speed = 0.0

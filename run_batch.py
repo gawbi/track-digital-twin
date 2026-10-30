@@ -25,6 +25,7 @@ def main():
     p.add_argument("--action-noise", type=float, default=0.0, help="collect: DART yaw noise rad/s")
     p.add_argument("--offroad-grace", type=float, help="collect: seconds off road before stopping")
     p.add_argument("--dagger-policy", type=Path, help="collect: policy drives, teacher labels")
+    p.add_argument("--policy-speed-scale", type=float, default=1.0, help="evaluate: command scale")
     a = p.parse_args()
     if a.mode == "evaluate" and not a.policy:
         p.error("evaluate requires --policy")
@@ -81,6 +82,7 @@ def main():
                 command += ["--policy", str(a.dagger_policy.resolve())]
         else:
             command += ["--policy", str(a.policy.resolve())]
+            command += ["--policy-speed-scale", str(a.policy_speed_scale)]
         if a.stress:
             command.append("--stress")
         if a.missions:

@@ -370,7 +370,18 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
                 )
         props.append({**p, "position": [px, py], "path": path})
     add_room(stage, layout, params, {p["spot"] for p in cfg["props"]})
+    overhead = None
+    if cfg["simulation"].get("overhead_camera"):
+        # Display-only top view of the whole mat (below the ceiling lamps); never a
+        # policy or mission input.
+        overhead = UsdGeom.Camera.Define(stage, "/World/Overhead")
+        transform(overhead.GetPrim(), (0, 0, 2.3))
+        overhead.CreateHorizontalApertureAttr(20.955)
+        overhead.CreateVerticalApertureAttr(20.955 * 0.75)
+        overhead.CreateFocalLengthAttr(20.955 * 0.75 / (2 * 1.32 / 2.3))
+        overhead.CreateClippingRangeAttr(Gf.Vec2f(0.05, 10.0))
     return {
+        "overhead_path": str(overhead.GetPath()) if overhead else None,
         "camera_path": str(camera.GetPath()),
         "body_path": str(chassis.GetPath()),
         "car_path": str(robot.GetPath()),

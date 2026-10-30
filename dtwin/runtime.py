@@ -90,6 +90,11 @@ class Simulator:
         self.rgb.attach([self.render_product])
         self.boxes = rep.AnnotatorRegistry.get_annotator("bounding_box_2d_tight")
         self.boxes.attach([self.render_product])
+        self.overhead = None
+        if self.objects.get("overhead_path"):
+            self.overhead_product = rep.create.render_product(self.objects["overhead_path"], (640, 480))
+            self.overhead = rep.AnnotatorRegistry.get_annotator("rgb")
+            self.overhead.attach([self.overhead_product])
         self.last_boxes = []
         for prop in self.objects["props"]:
             if prop["kind"] != "signal":
@@ -185,6 +190,14 @@ class Simulator:
                     {"class": name, "xyxy": [x0, y0, x1, y1], "source": "renderer_ground_truth"}
                 )
         return result
+
+    def overhead_rgb(self):
+        """Display-only overhead frame (evaluation videos), or None."""
+        if not self.overhead:
+            return None
+        data = self.overhead.get_data()
+        data = np.asarray(data["data"] if isinstance(data, dict) else data)
+        return data[..., :3].copy() if data.size else None
 
     def raw_rgb(self):
         data = self.rgb.get_data()
@@ -325,6 +338,9 @@ class Simulator:
         self.rgb.detach([self.render_product.path])
         self.boxes.detach([self.render_product.path])
         self.render_product.destroy()
+        if self.overhead:
+            self.overhead.detach([self.overhead_product.path])
+            self.overhead_product.destroy()
 
 
 class Recorder:
@@ -345,13 +361,16 @@ class Recorder:
         )
         (self.path / "episode.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2))
 
-    def write(self, record, rgb):
+    def write(self, record, rgb, overhead=None):
         if self.images:
             from PIL import Image
 
             relative = f"images/{record['frame']:06d}.jpg"
             Image.fromarray(rgb).save(self.path / relative, quality=95)
             record["image"] = relative
+            if overhead is not None:
+                (self.path / "images_chase").mkdir(exist_ok=True)
+                Image.fromarray(overhead).save(self.path / "images_chase" / f"{record['frame']:06d}.jpg", quality=85)
         self.file.write(json.dumps(record, ensure_ascii=False) + "\n")
         self.file.flush()
 

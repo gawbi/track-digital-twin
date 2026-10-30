@@ -26,6 +26,11 @@ def parser():
     p.add_argument("--headless", action="store_true")
     p.add_argument("--record", action="store_true", help="Save camera images for training")
     p.add_argument(
+        "--chase-video",
+        action="store_true",
+        help="Also record a display-only overhead view (images_chase/) for videos",
+    )
+    p.add_argument(
         "--offroad-grace", type=float, help="Override simulation.off_track_grace_s (collection)"
     )
     p.add_argument(
@@ -137,6 +142,8 @@ def main():
     cfg, params = sample_episode(base, args.seed, args.randomize, args.stress)
     if args.randomize or args.stress:
         randomize_props(cfg, layout, args.seed)
+    if args.chase_video:
+        cfg["simulation"]["overhead_camera"] = True
     if args.offroad_grace is not None:
         cfg["simulation"]["off_track_grace_s"] = args.offroad_grace
     if args.duration is not None:
@@ -298,7 +305,7 @@ def main():
             )
             if mission_info is not None:
                 record["autonomy"] = mission_info
-            recorder.write(record, rgb)
+            recorder.write(record, rgb, sim.overhead_rgb() if args.chase_video else None)
             summary["laps"] = laps
             if off_frames * sim.dt >= simcfg["off_track_grace_s"]:
                 summary["status"] = "offroad"

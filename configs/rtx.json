@@ -3,9 +3,9 @@
   "provenance": {
     "vehicle_length_m": "측정: 차량치수 사진, 약 25cm",
     "body_width_m": "측정: 약 10cm; 바퀴 포함 전체 폭 16cm",
-    "track_width_m": "계산: 전체 폭 16cm - 타이어 폭 3cm = 13cm",
+    "track_width_m": "측정 2026-10-31: 좌우 바퀴 중심 13cm",
     "wheel_radius_m": "측정 2026-10-31: 바퀴 지름 약 6.5cm",
-    "wheelbase_m": "추정: 앞뒤 축간 14cm, 실측 필요",
+    "wheelbase_m": "측정 2026-10-31: 앞뒤 바퀴 중심 12.5cm",
     "mass_kg": "추정: 실차 무게와 모터 토크 실측 필요",
     "camera": "측정+추정 2026-10-31: 내부값·왜곡 = 조원 체커보드 보정(OV5647 640x480 10-bit, 45장, RMS 0.40px, provisional). 기울기 23° 아래 = 이 보정으로 오늘 차량 영상의 지평선(약 115행)에서 계산(사용자가 이 각도로 고정 확인). 높이 7cm = 렌즈 중심. 줄자로 잰 카메라 최상단은 10cm(2026-10-31), 오늘 영상에서 지평선(약 22° 아래)과 26cm 도로 폭이 동시에 맞는 렌즈 높이는 7cm. 영상 아래 28px는 차 앞부분 가림. 조원 5계수 왜곡식은 화면 가장자리(정규화 반경 0.83 초과)에서 역변환이 안 되어, 보정이 잘 잡힌 가운데 영역(반경 0.70 이하)에서 0.41px 이내로 일치하는 단조 2계수 식(k1 -0.3565, k2 0.1206, 접선 계수 유지)으로 다시 맞춤. 10/14 구간 사진은 약 4.5° 위로 각도가 다름",
     "drive_model": "결정 2026-10-29: Isaac 5.1 PhysX 강체 바퀴 접촉은 전진 중 스키드 회전을 명령의 3~9%만 재현(tools/physics_probe.py). 수집·평가는 kinematic_skid, physx는 진단용",
@@ -13,12 +13,13 @@
     "motor_time_constant_s": "추정: TT 기어모터 응답, 실차 영상/엔코더로 보정",
     "odometry_track_width_m": "측정 기반: 13cm / η 0.43 = 30.2cm (엔코더 유무 확인 전)",
     "wheel_collision": "physx 진단 모드 전용: 실린더 충돌체는 회전 중 차체가 넘어져 구 충돌체 사용",
+    "encoder": "확인 2026-10-31 사진: TT 기어모터 뒤 엔코더 원판·센서 없음, 보드 표시는 PWMA/AIN만 → 엔코더 없음으로 판단. 실차 미션은 카메라 기반 거리 필요. 부저 GPIO12",
     "mission_defaults": "추정: STOP 1초, 감속배율 0.5, 경적 0.2초 및 제동·회전 설정은 현장 규칙/실측 보정 필요. 빨간 신호 약 1초는 녹음/캡처 근거"
   },
   "vehicle": {
     "length_m": 0.25, "body_width_m": 0.10, "body_height_m": 0.025,
     "track_width_m": 0.13, "wheel_radius_m": 0.0325,
-    "wheel_width_m": 0.03, "wheelbase_m": 0.14, "mass_kg": 0.9,
+    "wheel_width_m": 0.03, "wheelbase_m": 0.125, "mass_kg": 0.9,
     "max_wheel_rad_s": 22.0, "wheel_torque_nm": 0.12,
     "drive_damping": 0.03, "friction": 0.65,
     "wheel_collision": "sphere", "skid_yaw_efficiency": 0.43, "motor_time_constant_s": 0.08,

@@ -53,6 +53,21 @@ class GeometryTests(unittest.TestCase):
         self.assertNotEqual(a, sample_episode(self.cfg, 124, True))
         self.assertEqual(self.cfg["camera"]["z_m"], height)
 
+    def test_stress_parts_ablation_applies_only_the_named_change(self):
+        cfg_all, all_parts = sample_episode(self.cfg, 10000, False, True)
+        self.assertEqual((all_parts["motor_gain_left"], all_parts["motor_gain_right"]), (0.75, 1.2))
+        self.assertEqual(all_parts["latency_frames"], 3)
+        cfg_motor, motor = sample_episode(self.cfg, 10000, False, True, stress_parts=["motor"])
+        self.assertEqual((motor["motor_gain_left"], motor["motor_gain_right"]), (0.75, 1.2))
+        self.assertEqual(motor["latency_frames"], 0)
+        cfg_none, _ = sample_episode(self.cfg, 10000, False, True, stress_parts=[])
+        self.assertEqual(cfg_motor["camera"]["pitch_down_deg"], cfg_none["camera"]["pitch_down_deg"])
+        self.assertNotEqual(cfg_none["camera"]["pitch_down_deg"], cfg_all["camera"]["pitch_down_deg"])
+        cfg_cam, _ = sample_episode(self.cfg, 10000, False, True, stress_parts=["camera"])
+        self.assertEqual(cfg_cam["camera"]["pitch_down_deg"], cfg_all["camera"]["pitch_down_deg"])
+        with self.assertRaises(ValueError):
+            sample_episode(self.cfg, 10000, False, True, stress_parts=["weather"])
+
     def test_harsh_training_draws_keep_ordinary_seeds_and_add_glare_lights(self):
         plain_cfg, plain = sample_episode(self.cfg, 123, True)
         harsh_cfg, harsh = sample_episode(self.cfg, 123, True, harsh=True)

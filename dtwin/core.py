@@ -77,11 +77,15 @@ def load_inputs(config_path=None):
     return cfg, layout
 
 
-def sample_episode(base, seed, randomize=False, stress=False, harsh=False):
+STRESS_PARTS = ("image", "latency", "gloss", "motor", "camera", "dynamics")
+
+
+def sample_episode(base, seed, randomize=False, stress=False, harsh=False, stress_parts=None):
     """A seed completely identifies scene parameters. Stress uses held-out ranges.
 
     ``harsh`` (training only) widens appearance/actuation draws toward the stress
     conditions and adds low distant lights whose specular glare the real mat shows.
+    ``stress_parts`` applies only some stress changes (ablation); None = all of them.
     """
     cfg = copy.deepcopy(base)
     rng = random.Random(seed)
@@ -171,14 +175,23 @@ def sample_episode(base, seed, randomize=False, stress=False, harsh=False):
                     intensity=pick("light_intensity"),
                 ))
     if stress:
-        params["image_gain"] = rng.choice([0.55, 1.5])
-        params["image_noise_std"] = 9.0
-        params["latency_frames"] = 3
-        params["roughness"] = 0.08
-        params["motor_gain_left"] = 0.75
-        params["motor_gain_right"] = 1.2
-        cfg["camera"]["pitch_down_deg"] += rng.choice([-8, 8])
-        if "skid_yaw_efficiency" in r:
+        # Both choices are always drawn so a subset of parts keeps the same values.
+        gain, pitch = rng.choice([0.55, 1.5]), rng.choice([-8, 8])
+        parts = set(STRESS_PARTS if stress_parts is None else stress_parts)
+        if not parts <= set(STRESS_PARTS):
+            raise ValueError(f"Unknown stress parts {sorted(parts - set(STRESS_PARTS))}")
+        params["stress_parts"] = sorted(parts)
+        if "image" in parts:
+            params["image_gain"], params["image_noise_std"] = gain, 9.0
+        if "latency" in parts:
+            params["latency_frames"] = 3
+        if "gloss" in parts:
+            params["roughness"] = 0.08
+        if "motor" in parts:
+            params["motor_gain_left"], params["motor_gain_right"] = 0.75, 1.2
+        if "camera" in parts:
+            cfg["camera"]["pitch_down_deg"] += pitch
+        if "dynamics" in parts and "skid_yaw_efficiency" in r:
             params["skid_yaw_efficiency"] = min(r["skid_yaw_efficiency"]) * 0.9
             params["motor_time_constant_s"] = max(r["motor_time_constant_s"]) * 1.3
     return cfg, params

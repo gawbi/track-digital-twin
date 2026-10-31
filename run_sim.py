@@ -22,6 +22,8 @@ def parser():
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--randomize", action="store_true")
     p.add_argument("--stress", action="store_true")
+    p.add_argument("--stress-parts", help="Comma list of stress changes to apply (ablation): "
+                   "image,latency,gloss,motor,camera,dynamics; default all")
     p.add_argument("--harsh", action="store_true",
                    help="Training randomization: glare, wide brightness, motor mismatch (needs --randomize)")
     p.add_argument("--teacher-speed-scale", type=float, default=1.0,
@@ -170,7 +172,10 @@ def main():
         raise SystemExit("--harsh is a training randomization: use it with --randomize, not --stress")
     if not 0 < args.teacher_speed_scale <= 1:
         raise SystemExit("--teacher-speed-scale must be in (0, 1]")
-    cfg, params = sample_episode(base, args.seed, args.randomize, args.stress, args.harsh)
+    if args.stress_parts and not args.stress:
+        raise SystemExit("--stress-parts needs --stress")
+    parts = args.stress_parts.split(",") if args.stress_parts else None
+    cfg, params = sample_episode(base, args.seed, args.randomize, args.stress, args.harsh, parts)
     if args.randomize or args.stress:
         randomize_props(cfg, layout, args.seed)
     if args.chase_video:

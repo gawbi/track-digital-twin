@@ -18,6 +18,7 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--policy", type=Path)
     p.add_argument("--stress", action="store_true")
+    p.add_argument("--stress-parts", help="Comma list of stress changes (ablation), default all")
     p.add_argument("--route", choices=["outer", "inner"], default="outer")
     p.add_argument("--missions", action="store_true")
     p.add_argument("--detector", type=Path)
@@ -90,6 +91,8 @@ def main():
             command += ["--policy-speed-scale", str(a.policy_speed_scale)]
         if a.stress:
             command.append("--stress")
+            if a.stress_parts:
+                command += ["--stress-parts", a.stress_parts]
         if a.missions:
             command += ["--missions", "--detector", str(a.detector.resolve())]
             if a.calibration:

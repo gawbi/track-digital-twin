@@ -194,10 +194,19 @@ python train_policy.py --real-manifest outputs/real/manifest-v1.json --init-chec
 python evaluate_lane_offline.py models/lane-C/policy.onnx --real-manifest outputs/real/manifest-v1.json --split validation
 ```
 
-### 엔코더가 없을 때의 범위
+### 엔코더가 없을 때의 범위 (2026-10-31: 실차에 엔코더 없음 확인)
 
-`run_vehicle.py`는 엔코더 어댑터가 없으면 `--missions`를 거부하고 검출기를 **관측 기록 전용**으로 돌린다.
-시각만으로 분홍선·횡단보도 접근 거리를 판단하는 대체 미션 제어는 아직 구현하지 않았다(미검증·정지 상태로 남김).
+`run_vehicle.py`는 엔코더 기반 `--missions`를 거부한다. 대신 **`--vision-missions`**(`dtwin/vision_missions.py`)가
+카메라만으로 미션을 수행한다.
+
+- 분홍 점선·횡단보도 거리: 실측 카메라 보정으로 바닥에 투영해 매 프레임 측정. 가까이 있던 분홍선이 화면 아래로
+  사라지면 "선을 지남"으로 판단하고, 수행 중인 표지판 미션이 있으면 기한 초과 오류로 정지.
+- 정지 확인: PWM이 아니라 **영상 변화가 멈춘 것**(바닥 영역 프레임 차이)으로 확인한 뒤 STOP·빨간 신호 대기 시간을 잰다.
+- 경적·STOP·감속20은 종류별로 한 번 수행하고, **다음 분홍선을 지난 뒤** 다시 수행 가능. 경적은 보드 부저(GPIO12).
+- 검출 스레드 안에서 돌고, 결과가 0.6초보다 오래되면 차선 루프가 정지한다.
+- **교차로 회전(신호 우회전·방향 표지판)은 구현하지 않았다**: 바퀴 측정 없이 회전각을 확인할 방법이 필요하다.
+  현재는 이벤트에 `junction_turn: not_implemented_vision_only`로 남기고 차선 정책이 계속 주행한다.
+- 시뮬레이터에서도 `run_sim.py --vision-missions`로 같은 제어기를 바퀴 측정 없이 시험할 수 있다.
 
 작업은 `feat/isaac-sim-rtx5070`과 기존 Draft PR에서 이어간다. 새 장비 구매나 플랫폼 전환이
 필요하다고 판단하면 먼저 현재 장비에서 측정한 병목을 제시한다. 원본 영상·교재 코드·가중치·데이터는

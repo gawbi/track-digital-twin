@@ -61,6 +61,12 @@ def parser():
         help="Vision detector + wheel encoders + map mission control (ONNX mode)",
     )
     p.add_argument(
+        "--vision-missions",
+        action="store_true",
+        help="Missions WITHOUT wheel encoders: camera-only pink/crosswalk distance and "
+        "image standstill (dtwin.vision_missions); junction turns are not handled",
+    )
+    p.add_argument(
         "--teacher-lane-diagnostic",
         action="store_true",
         help="Missions with the privileged teacher as LANE input (--mode expert). Checks the "
@@ -130,6 +136,8 @@ def preflight(cfg, layout):
 
 def main():
     args = parser().parse_args()
+    if args.vision_missions:
+        args.missions = True
     base, layout = load_inputs(args.config)
     if args.check:
         preflight(base, layout)
@@ -231,12 +239,18 @@ def main():
             calibration = (
                 json.loads(args.calibration.read_text()) if args.calibration else base["camera"]
             )
-            mission_driver = MissionDriver(
-                base, layout, initial_pose, OnnxDetector(args.detector), calibration
-            )
-            summary["control_sources"] = (
-                "RGB detector + measured wheel joints + configured map/start; no simulator pose or labels"
-            )
+            if args.vision_missions:
+                from dtwin.vision_missions import VisionMissionDriver
+
+                mission_driver = VisionMissionDriver(base, OnnxDetector(args.detector), calibration)
+                summary["control_sources"] = "RGB only (no encoders, no map pose); junction turns not handled"
+            else:
+                mission_driver = MissionDriver(
+                    base, layout, initial_pose, OnnxDetector(args.detector), calibration
+                )
+                summary["control_sources"] = (
+                    "RGB detector + measured wheel joints + configured map/start; no simulator pose or labels"
+                )
             if args.teacher_lane_diagnostic:
                 summary["lane_source"] = "privileged teacher (diagnostic only, not autonomy)"
         params["action_noise_rad_s"] = args.action_noise if args.mode == "expert" else 0.0
@@ -317,7 +331,15 @@ def main():
             else:
                 off_frames = 0
             mission_info = None
-            if mission_driver:
+            if mission_driver and args.vision_missions:
+                result = mission_driver.step(rgb, sim.frame * sim.dt, sim.last_capture_time_s)
+                scale = 0.0 if result.stop else result.speed_scale
+                command, horn, mission_info = (command[0] * scale, command[1] * scale), result.horn, result.telemetry
+                if horn:
+                    sim.horn(base["missions"]["horn_duration_s"])
+                if args.mode == "expert":
+                    follower.record_applied(*command)
+            elif mission_driver:
                 left, right = sim.wheel_measurement()
                 command, horn, mission_info = mission_driver.step(
                     rgb, sim.frame * sim.dt, sim.last_capture_time_s, left, right, command
@@ -364,17 +386,20 @@ def main():
                 kind: sum(e["kind"] == kind for e in completed)
                 for kind in ["horn", "stop", "speed20", "signal"]
             }
+            fault = mission_driver.fault if args.vision_missions else mission_driver.last_guard
+            phase = "not_handled" if args.vision_missions else mission_driver.navigator.phase
             summary.update(
                 lane_success=summary["success"],
                 mission_counts=counts,
-                mission_fault=mission_driver.last_guard,
-                mission_navigation_phase=mission_driver.navigator.phase,
+                mission_fault=fault,
+                mission_navigation_phase=phase,
                 required_missions=base["missions"]["required_missions"],
+                mission_mode="vision_only" if args.vision_missions else "encoder_odometry",
             )
             summary["success"] = (
                 summary["lane_success"]
-                and not mission_driver.last_guard
-                and mission_driver.navigator.phase == "lane"
+                and not fault
+                and phase in {"lane", "not_handled"}
                 and all(counts[kind] > 0 for kind in base["missions"]["required_missions"])
             )
             (output / "mission_events.json").write_text(

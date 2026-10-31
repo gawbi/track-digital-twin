@@ -1,0 +1,12 @@
+{
+  "action_space": "normalized_linear_angular_v1",
+  "duty_mixer": {
+    "max_duty": 0.66,
+    "turn_mix": 0.72,
+    "trim_left": 1.0,
+    "trim_right": 1.0,
+    "deadband": 0.0,
+    "min_duty": 0.175,
+    "provenance": "측정 2026-10-31(310호 매트): 속도≈0.37×(duty−0.175) m/s(30% 정지, 40% 3초 25cm, 50% 3초 36cm). max_duty 0.66 = 시뮬레이터 최고 0.18m/s. 실제로는 duty 0.33 미만이면 멈춤. 좌우 회전 같음 → trim 1.0"
+  }
+}

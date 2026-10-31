@@ -9,9 +9,9 @@
     "mass_kg": "추정: 실차 무게와 모터 토크 실측 필요",
     "camera": "측정+추정 2026-10-31: 내부값·왜곡 = 조원 체커보드 보정(OV5647 640x480 10-bit, 45장, RMS 0.40px, provisional). 기울기 23° 아래 = 이 보정으로 오늘 차량 영상의 지평선(약 115행)에서 계산(사용자가 이 각도로 고정 확인). 높이 7cm = 26cm 도로 폭 역산 [추정, 줄자 실측 필요]. 영상 아래 28px는 차 앞부분 가림. 조원 5계수 왜곡식은 화면 가장자리(정규화 반경 0.83 초과)에서 역변환이 안 되어, 보정이 잘 잡힌 가운데 영역(반경 0.70 이하)에서 0.41px 이내로 일치하는 단조 2계수 식(k1 -0.3565, k2 0.1206, 접선 계수 유지)으로 다시 맞춤. 10/14 구간 사진은 약 4.5° 위로 각도가 다름",
     "drive_model": "결정 2026-10-29: Isaac 5.1 PhysX 강체 바퀴 접촉은 전진 중 스키드 회전을 명령의 3~9%만 재현(tools/physics_probe.py). 수집·평가는 kinematic_skid, physx는 진단용",
-    "skid_yaw_efficiency": "추정: 쿨롱 마찰 준정적 계산 0.46(축간 14/좌우 13cm), 실차 제자리·원호 회전율 측정 후 보정",
+    "skid_yaw_efficiency": "측정 2026-10-31: 실차 50% 세기 직진 3초 36cm(초속 12cm), 제자리 회전 50% 6초 0.75바퀴(좌우 같음) → 실효 회전 효율 0.43. 범위 0.33–0.55",
     "motor_time_constant_s": "추정: TT 기어모터 응답, 실차 영상/엔코더로 보정",
-    "odometry_track_width_m": "추정: 스키드 회전을 반영한 바퀴 odometry 유효 좌우 간격 = 13cm / η 0.6. tools/motion_calibration.py의 η 실측으로 교체",
+    "odometry_track_width_m": "측정 기반: 13cm / η 0.43 = 30.2cm (엔코더 유무 확인 전)",
     "wheel_collision": "physx 진단 모드 전용: 실린더 충돌체는 회전 중 차체가 넘어져 구 충돌체 사용",
     "mission_defaults": "추정: STOP 1초, 감속배율 0.5, 경적 0.2초 및 제동·회전 설정은 현장 규칙/실측 보정 필요. 빨간 신호 약 1초는 녹음/캡처 근거"
   },
@@ -21,8 +21,8 @@
     "wheel_width_m": 0.03, "wheelbase_m": 0.14, "mass_kg": 0.9,
     "max_wheel_rad_s": 22.0, "wheel_torque_nm": 0.12,
     "drive_damping": 0.03, "friction": 0.65,
-    "wheel_collision": "sphere", "skid_yaw_efficiency": 0.6, "motor_time_constant_s": 0.08,
-    "odometry_track_width_m": 0.2167
+    "wheel_collision": "sphere", "skid_yaw_efficiency": 0.43, "motor_time_constant_s": 0.08,
+    "odometry_track_width_m": 0.302
   },
   "camera": {
     "width": 640, "height": 480, "x_m": 0.13, "z_m": 0.07,
@@ -47,7 +47,7 @@
     "spawn_lateral_m": [-0.02, 0.02], "spawn_yaw_deg": [-6.0, 6.0],
     "image_gain": [0.8, 1.2], "image_noise_std": [0.0, 5.0],
     "latency_frames": [0, 2],
-    "skid_yaw_efficiency": [0.45, 0.85], "motor_time_constant_s": [0.04, 0.15],
+    "skid_yaw_efficiency": [0.33, 0.55], "motor_time_constant_s": [0.04, 0.15],
     "image_blur_sigma": [0.0, 1.3], "image_channel_gain": [0.85, 1.15],
     "distortion_k1_delta": [-0.05, 0.05], "focal_scale_delta": [-0.04, 0.04]
   },

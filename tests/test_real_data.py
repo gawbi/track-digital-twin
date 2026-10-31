@@ -60,6 +60,15 @@ class ActionContractTests(unittest.TestCase):
         for action in [(0.3, 0.2), (-0.2, 0.4), (0.0, -0.5)]:
             np.testing.assert_allclose(mixer.action(*mixer.duty(action)), action, atol=1e-9)
 
+    def test_min_duty_offset_keeps_slow_commands_moving_and_inverts(self):
+        mixer = DutyMixer(max_duty=0.6, min_duty=0.35)
+        left, right = mixer.duty((0.1, 0.0))
+        self.assertGreaterEqual(left, 0.35)
+        self.assertEqual(mixer.duty((0.0, 0.0)), (0.0, 0.0))
+        self.assertAlmostEqual(mixer.duty((1.0, 0.0))[0], 0.6)
+        for action in [(0.3, 0.2), (-0.4, 0.1)]:
+            np.testing.assert_allclose(mixer.action(*mixer.duty(action)), action, atol=1e-9)
+
     def test_simulator_ratio_matches_wheel_kinematics(self):
         from dtwin.core import wheel_speeds
 

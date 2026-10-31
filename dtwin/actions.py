@@ -44,11 +44,16 @@ class DutyMixer:
     trim_left: float = 1.0
     trim_right: float = 1.0
     deadband: float = 0.0
+    # Smallest duty that actually moves the car on the mat (static friction). Nonzero
+    # commands map to [min_duty, max_duty] so slow commands do not stall the motors.
+    min_duty: float = 0.0
     provenance: str = "[추정] simulator ratio; measure on the real car"
 
     def __post_init__(self):
         if not 0 < self.max_duty <= 1 or self.turn_mix <= 0 or not 0 <= self.deadband < 1:
             raise ValueError("Invalid duty mixer calibration")
+        if not 0 <= self.min_duty < self.max_duty:
+            raise ValueError("min_duty must be in [0, max_duty)")
         if not (0 < self.trim_left <= 1.5 and 0 < self.trim_right <= 1.5):
             raise ValueError("Motor trims must be in (0, 1.5]")
 
@@ -70,10 +75,17 @@ class DutyMixer:
         return {"action_space": ACTION_SPACE, "duty_mixer": asdict(self)}
 
     def _side(self, value, trim):
-        duty = max(-1.0, min(1.0, value)) * self.max_duty * trim
-        if abs(duty) < self.deadband:
+        value = max(-1.0, min(1.0, value))
+        if abs(value) <= self.deadband:
             return 0.0
-        return max(-1.0, min(1.0, duty))
+        magnitude = self.min_duty + (self.max_duty - self.min_duty) * abs(value)
+        return max(-1.0, min(1.0, math.copysign(magnitude, value) * trim))
+
+    def _unside(self, duty, trim):
+        duty = duty / trim
+        if duty == 0:
+            return 0.0
+        return math.copysign((abs(duty) - self.min_duty) / (self.max_duty - self.min_duty), duty)
 
     def duty(self, action):
         linear, angular = clip_unit(action[0]), clip_unit(action[1])
@@ -89,6 +101,6 @@ class DutyMixer:
         Exact inverse only without saturation/deadband; the result is a command
         label in the shared space, not a measurement of how the car moved.
         """
-        left = left_duty / (self.max_duty * self.trim_left)
-        right = right_duty / (self.max_duty * self.trim_right)
+        left = self._unside(left_duty, self.trim_left)
+        right = self._unside(right_duty, self.trim_right)
         return clip_unit((left + right) / 2), clip_unit((right - left) / (2 * self.turn_mix))

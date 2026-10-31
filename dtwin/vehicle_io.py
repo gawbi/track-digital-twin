@@ -28,8 +28,11 @@ class PicameraSource:
         from picamera2 import Picamera2
 
         self.camera = Picamera2()
+        # Same sensor mode as the checkerboard calibration (640x480, 10-bit); another
+        # mode crops/bins differently and changes the field of view.
         config = self.camera.create_video_configuration(
             main={"size": (width, height), "format": "RGB888"},
+            sensor={"output_size": (width, height), "bit_depth": 10},
             controls={"FrameRate": fps},
             buffer_count=2,
         )

@@ -79,10 +79,16 @@ def main():
             by_label[name] = dict(frames=int(mask.sum()), normalized_mae=errors[mask].mean(0).tolist())
     if turning.any():
         t, pr = targets[turning, 1], predictions[turning, 1]
+        # The driven path depends on angular/linear (curvature), not on angular alone:
+        # a policy that drives slower must also turn proportionally less.
+        moving = turning & (targets[:, 0] >= 0.2)
+        curvature = lambda v: np.median(np.abs(v[moving, 1]) / np.maximum(np.abs(v[moving, 0]), 0.05))
         by_label["turning"].update(
             same_direction=float((np.sign(pr) == np.sign(t)).mean()),
             mean_abs_target_angular=float(np.abs(t).mean()),
             mean_abs_predicted_angular=float(np.abs(pr).mean()),
+            median_target_angular_per_linear=float(curvature(targets)) if moving.any() else None,
+            median_predicted_angular_per_linear=float(curvature(predictions)) if moving.any() else None,
         )
     report = dict(
         policy=str(a.policy),

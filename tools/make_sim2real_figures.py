@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """README figures for the sim-to-real write-up (synthetic frames and summary numbers only).
 
-  docs/images/curve_steering_{light,dark}.png  how much each lane policy turns on real
-      turning frames vs the human label (from evaluate_lane_offline.py logs)
+  docs/images/curve_steering_{light,dark}.png  path curvature (angular per linear) each lane
+      policy commands on real turning frames vs the human label (evaluate_lane_offline.py logs)
   docs/images/sim_{clean,harsh}.jpg            synthetic camera frames before/after the
       glare + harsh randomization
 
@@ -20,8 +20,10 @@ MODELS = [  # (log name, label)
     ("lane-v4b", "A  Isaac Sim만"),
     ("lane-real-B", "B  실제만"),
     ("lane-real-C", "C  Isaac Sim → 실제"),
-    ("lane-v5", "A5  Isaac Sim만 (반사·가혹)"),
+    ("lane-v5", "A5  반사·가혹 합성 (커브 기준 선택)"),
     ("lane-real-C5", "C5  A5 → 실제"),
+    ("lane-v5b", "A5b 반사·가혹 합성 (합성 기준 선택)"),
+    ("lane-real-C5b", "C5b A5b → 실제"),
 ]
 THEMES = {  # chart chrome from the dataviz reference palette, series slot 1
     "light": dict(surface="#fcfcfb", ink="#0b0b0b", ink2="#52514e", muted="#898781",
@@ -50,8 +52,11 @@ def curve_chart(out):
         if not log.exists():
             continue
         turning = json.loads(log.read_text())["by_label"]["turning"]
-        rows.append((label, turning["mean_abs_predicted_angular"]))
-        target = turning["mean_abs_target_angular"]
+        if turning.get("median_predicted_angular_per_linear") is None:
+            continue
+        # Curvature, not angular alone: a policy that slows down in curves turns less per second.
+        rows.append((label, turning["median_predicted_angular_per_linear"]))
+        target = turning["median_target_angular_per_linear"]
     if not rows:
         raise SystemExit("No evaluate_lane_offline.py logs with by_label")
     for mode, t in THEMES.items():
@@ -62,7 +67,8 @@ def curve_chart(out):
         values = [v for _, v in rows]
         ax.barh(y, values, height=0.5, color=t["series"], zorder=2)
         for yi, v in zip(y, values):
-            ax.text(v + 0.012, yi, f"{v:.2f}", va="center", color=t["ink"], fontsize=10)
+            ax.text(v + 0.012, yi, f"{v:.2f}", va="center", color=t["ink"], fontsize=10, zorder=4,
+                    bbox=dict(facecolor=t["surface"], edgecolor="none", pad=1.5))
         ax.axvline(target, color=t["ink2"], linewidth=1.2, linestyle=(0, (4, 3)), zorder=3)
         ax.text(target - 0.01, len(rows) - 0.45, f"사람 운전 정답 {target:.2f}", ha="right", va="bottom",
                 color=t["ink2"], fontsize=9.5)
@@ -75,7 +81,7 @@ def curve_chart(out):
         for side in ["top", "right", "left"]:
             ax.spines[side].set_visible(False)
         ax.spines["bottom"].set_color(t["axis"])
-        ax.set_xlabel("실제 커브 사진에서 모델이 꺾는 양 (평균 |회전 명령|, 실제 검증 세션)",
+        ax.set_xlabel("실제 커브 사진에서 모델이 그리는 곡률 (회전 ÷ 전진 명령, 중앙값, 실제 검증 세션)",
                       color=t["ink2"], fontsize=9.5)
         fig.tight_layout()
         fig.savefig(out / f"curve_steering_{mode}.png", facecolor=t["surface"])

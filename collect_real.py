@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Record a real session on the Raspberry Pi: RGB frames + sent commands + times.
 
-Keyboard teleop over SSH: w/s forward/back, a/d turn in place, q/e forward arc
-left/right (smooth steering labels), x stop, p quit. A command
+Keyboard teleop over SSH: arrow keys (up forward, left/right forward arc, down back,
+space stop) or w/s, q/e arcs, a/d turn in place, x stop; p quits. A command
 expires after --command-timeout and the motors stop. Labels are the COMMANDS that
 were sent (normalized action and PWM duty), never measured speed; encoder data is
 written only if a real encoder adapter exists (not implemented: --encoder none).
@@ -34,7 +34,10 @@ KEYS = {
     "q": (1.0, 0.6),
     "e": (1.0, -0.6),
     "x": (0.0, 0.0),
+    " ": (0.0, 0.0),
 }
+# Arrow keys arrive as ESC [ A/B/C/D: up = forward, left/right = forward arcs, down = back.
+ARROWS = {"A": "w", "B": "s", "C": "e", "D": "q"}
 
 
 def open_camera(spec, width, height, fps, flip180, loop=False):
@@ -80,7 +83,11 @@ class Teleop:
             tty.setcbreak(fd)
             while not self.quit.is_set():
                 if select.select([sys.stdin], [], [], 0.05)[0]:
-                    self.press(sys.stdin.read(1).lower())
+                    key = sys.stdin.read(1)
+                    if key == "\x1b" and select.select([sys.stdin], [], [], 0.02)[0]:
+                        if sys.stdin.read(1) == "[" and select.select([sys.stdin], [], [], 0.02)[0]:
+                            key = ARROWS.get(sys.stdin.read(1), "")
+                    self.press(key.lower())
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -162,7 +169,11 @@ def main():
         threads.append(threading.Thread(target=teleop.run_terminal, name="keys", daemon=True))
     for thread in threads:
         thread.start()
-    print("Recording. w/s fwd/back, a/d spin, q/e forward-left/right arc, x stop, p quit.", file=sys.stderr)
+    print(
+        "Recording. Arrows: up fwd, left/right forward arc, down back, space stop. "
+        "Also w/s, q/e arcs, a/d spin, x stop. p quit.",
+        file=sys.stderr,
+    )
     start, kept, seen, status = monotonic_ns(), 0, 0, "completed"
     try:
         while not teleop.quit.is_set():

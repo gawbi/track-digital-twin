@@ -7,7 +7,7 @@
     "wheel_radius_m": "추정: TT 타이어 지름 65mm, 실측 필요",
     "wheelbase_m": "추정: 앞뒤 축간 14cm, 실측 필요",
     "mass_kg": "추정: 실차 무게와 모터 토크 실측 필요",
-    "camera": "사진 추정 2026-10-29: 차량 카메라 사진(2026-10-14, 310호) 지평선 약 290/480행 → 약 8.5° 위, 횡단보도(폭 17.75cm·줄 12cm) 투영 → 중심 fx≈330px(핀홀 등가 88°), 렌즈 높이 약 7cm(신호등 24cm 비율로 교차 확인), 술통형 왜곡 k1≈-0.3, 차체가 화면에 보이지 않아 렌즈를 차체 앞끝(x 0.13m)에 둠. 실측 필요",
+    "camera": "측정+추정 2026-10-31: 내부값·왜곡 = 조원 체커보드 보정(OV5647 640x480 10-bit, 45장, RMS 0.40px, provisional). 기울기 23° 아래 = 이 보정으로 오늘 차량 영상의 지평선(약 115행)에서 계산(사용자가 이 각도로 고정 확인). 높이 7cm = 26cm 도로 폭 역산 [추정, 줄자 실측 필요]. 영상 아래 28px는 차 앞부분 가림. 조원 5계수 왜곡식은 화면 가장자리(정규화 반경 0.83 초과)에서 역변환이 안 되어, 보정이 잘 잡힌 가운데 영역(반경 0.70 이하)에서 0.41px 이내로 일치하는 단조 2계수 식(k1 -0.3565, k2 0.1206, 접선 계수 유지)으로 다시 맞춤. 10/14 구간 사진은 약 4.5° 위로 각도가 다름",
     "drive_model": "결정 2026-10-29: Isaac 5.1 PhysX 강체 바퀴 접촉은 전진 중 스키드 회전을 명령의 3~9%만 재현(tools/physics_probe.py). 수집·평가는 kinematic_skid, physx는 진단용",
     "skid_yaw_efficiency": "추정: 쿨롱 마찰 준정적 계산 0.46(축간 14/좌우 13cm), 실차 제자리·원호 회전율 측정 후 보정",
     "motor_time_constant_s": "추정: TT 기어모터 응답, 실차 영상/엔코더로 보정",
@@ -26,8 +26,10 @@
   },
   "camera": {
     "width": 640, "height": 480, "x_m": 0.13, "z_m": 0.07,
-    "pitch_down_deg": -8.5, "yaw_deg": 0.0, "hfov_deg": 88.0,
-    "distortion": [-0.3, 0.08, 0.0, 0.0, 0.0]
+    "pitch_down_deg": 23.0, "yaw_deg": 0.0, "hfov_deg": 82.5,
+    "intrinsics": {"fx": 365.008, "fy": 364.553, "cx": 320.984, "cy": 261.671},
+    "distortion": [-0.3565, 0.1206, -0.002852, 0.002009, 0.0],
+    "bottom_occluder_px": 28
   },
   "simulation": {
     "drive_model": "kinematic_skid",
@@ -40,14 +42,14 @@
     "dome_intensity": [250.0, 1200.0], "key_intensity": [600.0, 3000.0],
     "light_temperature_k": [3500.0, 7500.0], "roughness": [0.18, 0.8],
     "friction": [0.4, 1.0], "motor_gain": [0.85, 1.15],
-    "camera_height_delta_m": [-0.015, 0.015], "camera_pitch_delta_deg": [-5.0, 5.0],
+    "camera_height_delta_m": [-0.01, 0.01], "camera_pitch_delta_deg": [-3.0, 3.0],
     "camera_yaw_delta_deg": [-2.0, 2.0], "hfov_delta_deg": [-6.0, 6.0],
     "spawn_lateral_m": [-0.02, 0.02], "spawn_yaw_deg": [-6.0, 6.0],
     "image_gain": [0.8, 1.2], "image_noise_std": [0.0, 5.0],
     "latency_frames": [0, 2],
     "skid_yaw_efficiency": [0.45, 0.85], "motor_time_constant_s": [0.04, 0.15],
     "image_blur_sigma": [0.0, 1.3], "image_channel_gain": [0.85, 1.15],
-    "distortion_k1_delta": [-0.1, 0.1]
+    "distortion_k1_delta": [-0.05, 0.05], "focal_scale_delta": [-0.04, 0.04]
   },
   "missions": {
     "sign_bottom_m": 0.103, "signal_bottom_m": 0.075,

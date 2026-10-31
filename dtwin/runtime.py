@@ -82,6 +82,7 @@ class Simulator:
         from .lens import Lens
 
         self.lens = Lens(cfg["camera"])
+        self.occluder_px = cfg["camera"].get("bottom_occluder_px", 0)
         # Larger pinhole render when the lens resamples it (see dtwin.lens).
         self.render_product = rep.create.render_product(
             self.objects["camera_path"], self.lens.render_size
@@ -211,6 +212,11 @@ class Simulator:
             raise RuntimeError(f"Invalid camera frame: {frame.shape}")
         if getattr(self, "lens", None):
             frame = self.lens.apply(frame)
+        band = getattr(self, "occluder_px", 0)
+        if band:
+            # The real camera sees the car's own front (sensor bracket) along the bottom edge.
+            frame = frame.copy()
+            frame[-band:] = (frame[-band:] * 0.15 + 20).astype(np.uint8)
         if self.params.get("image_blur_sigma", 0) > 0:
             import cv2
 

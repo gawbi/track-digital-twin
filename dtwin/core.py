@@ -138,6 +138,13 @@ def sample_episode(base, seed, randomize=False, stress=False):
             params["image_channel_gains"] = [draw("image_channel_gain") for _ in range(3)]
         if "distortion_k1_delta" in r and cfg["camera"].get("distortion"):
             cfg["camera"]["distortion"][0] += draw("distortion_k1_delta")
+        if "focal_scale_delta" in r and cfg["camera"].get("intrinsics"):
+            scale = 1 + draw("focal_scale_delta")
+            cfg["camera"]["intrinsics"] = dict(
+                cfg["camera"]["intrinsics"],
+                fx=cfg["camera"]["intrinsics"]["fx"] * scale,
+                fy=cfg["camera"]["intrinsics"]["fy"] * scale,
+            )
     if stress:
         params["image_gain"] = rng.choice([0.55, 1.5])
         params["image_noise_std"] = 9.0

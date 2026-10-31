@@ -28,13 +28,15 @@ SS = 2  # 슈퍼샘플링 배율 (가장자리를 부드럽게 그린 뒤 축소
 # 원근 보정 사진에서 순환로 바깥 테두리가 동서로 약 6cm 짧고, 블록 동서 폭이 약 63.6cm로 나옴
 PRINT_X = 2235          # [측정] 동서 전체 (세로 223~224cm)
 PRINT_Y = 2280          # [측정] 남북 전체 (가로 228cm)
-OUTER_ROAD = 260        # [측정] 바깥 순환로 폭 (양쪽 노란선 포함)
-CENTER_ROAD_EW = 185    # [측정] 동서 방향 가운데 도로 (이음매가 지나가는 도로)
-CENTER_ROAD_NS = 210    # [측정] 남북 방향 가운데 도로 (2026-10-30 줄자 21cm, 사진 약 207mm)
+OUTER_ROAD = 260        # [측정] 바깥 순환로 폭 (양쪽 노란선 포함). 남쪽 2026-10-31 줄자 26cm
+OUTER_ROAD_E = 240      # [측정] 동쪽 순환로만 좁음 (2026-10-31 줄자 24cm)
+CENTER_ROAD_EW = 185    # [측정] 동서 방향 가운데 도로 (이음매가 지나가는 도로, 2026-10-31 줄자 18cm)
+CENTER_ROAD_NS = 210    # [측정] 남북 방향 가운데 도로 (2026-10-30, 10-31 줄자 21cm, 사진 약 207mm)
 BLOCK_Y = 650           # [측정] 안쪽 초록 블록 남북 길이
-BAND_X = 125            # [측정] 동서 끝 바깥 초록 띠 (줄자 사진 9의 12.5cm)
+BAND_X = 125            # [측정] 서쪽 끝 바깥 초록 띠 (줄자 사진 9의 12.5cm)
+BAND_X_E = BAND_X + OUTER_ROAD - OUTER_ROAD_E  # [추정] 동쪽은 도로 바깥 경계가 안쪽으로 들어온 만큼 띠가 넓음
 # 나머지로 계산: 블록 동서 폭 627.5 (사진 약 636), 남북 끝 초록 띠 137.5
-BLOCK_X = (PRINT_X - 2 * BAND_X - 2 * OUTER_ROAD - CENTER_ROAD_NS) / 2
+BLOCK_X = (PRINT_X - BAND_X - BAND_X_E - OUTER_ROAD - OUTER_ROAD_E - CENTER_ROAD_NS) / 2
 BAND_Y = (PRINT_Y - 2 * OUTER_ROAD - 2 * BLOCK_Y - CENTER_ROAD_EW) / 2
 
 STRIPE_W, STRIPE_GAP, STRIPE_LEN = 20, 11.5, 120  # [측정] 횡단보도 흰 줄 폭, 간격, 길이
@@ -71,18 +73,18 @@ COLORS = {
 }
 
 
-def axis_spans(band, block, center, total):
+def axis_spans(band, block, center, total, road_hi=OUTER_ROAD, band_hi=None):
     """한 축을 따라 (바깥 도로, 블록, 가운데 도로, 블록, 바깥 도로) 구간. 인쇄 영역 mm."""
     edges = [band]
-    for w in (OUTER_ROAD, block, center, block, OUTER_ROAD):
+    for w in (OUTER_ROAD, block, center, block, road_hi):
         edges.append(edges[-1] + w)
-    assert abs(edges[-1] + band - total) < 1e-6
+    assert abs(edges[-1] + (band if band_hi is None else band_hi) - total) < 1e-6
     keys = ("road_lo", "block_lo", "center", "block_hi", "road_hi")
     return {k: (edges[i], edges[i + 1]) for i, k in enumerate(keys)}
 
 
 # 인쇄 영역 좌표: 왼쪽 위 원점, x 오른쪽(동), y 아래쪽(남)
-X = axis_spans(BAND_X, BLOCK_X, CENTER_ROAD_NS, PRINT_X)
+X = axis_spans(BAND_X, BLOCK_X, CENTER_ROAD_NS, PRINT_X, OUTER_ROAD_E, BAND_X_E)
 Y = axis_spans(BAND_Y, BLOCK_Y, CENTER_ROAD_EW, PRINT_Y)
 
 
@@ -218,7 +220,7 @@ def draw_spots(cv, layout):
     # 바깥 띠의 원은 변 가운데가 아니라 옆 블록의 파란 원 줄에 맞춰 시계 방향으로 비켜 있음
     band = (
         (X["center"][1] + SPOT_INSET, BAND_Y / 2, "N"),
-        (PRINT_X - BAND_X / 2, Y["center"][1] + SPOT_INSET, "E"),
+        (PRINT_X - BAND_X_E / 2, Y["center"][1] + SPOT_INSET, "E"),
         (X["center"][0] - SPOT_INSET, PRINT_Y - BAND_Y / 2, "S"),
         (BAND_X / 2, Y["center"][0] - SPOT_INSET, "W"),
     )
@@ -233,8 +235,8 @@ def draw_seam(cv):
     cv.rect(-BORDER, mid - 0.75, PRINT_X + BORDER, mid + 0.75, COLORS["seam"])
 
 
-def rounded_rect_path(hx, hy, r, step=20):
-    """중심 원점, 반폭 hx/hy, 모서리 반경 r인 둥근 사각형 경로 (시계 방향, 북쪽 가운데에서 출발)."""
+def rounded_rect_path(hx, hy, r, step=20, cx=0.0):
+    """중심 (cx, 0), 반폭 hx/hy, 모서리 반경 r인 둥근 사각형 경로 (시계 방향, 북쪽 가운데에서 출발)."""
     pts = []
     sx, sy = hx - r, hy - r
 
@@ -257,11 +259,13 @@ def rounded_rect_path(hx, hy, r, step=20):
     arc(-sx, -sy, -math.pi / 2, -math.pi)
     line(-hx, -sy, -hx, sy)
     arc(-sx, sy, math.pi, math.pi / 2)
-    return [[round(x / 1000, 4), round(y / 1000, 4)] for x, y in pts]
+    return [[round((x + cx) / 1000, 4), round(y / 1000, 4)] for x, y in pts]
 
 
 def build_layout():
-    hx = PRINT_X / 2 - (BAND_X + OUTER_ROAD / 2)   # 동서 순환로 중심선까지
+    west = -(PRINT_X / 2 - (BAND_X + OUTER_ROAD / 2))     # 서쪽 순환로 중심선
+    east = PRINT_X / 2 - (BAND_X_E + OUTER_ROAD_E / 2)    # 동쪽 순환로 중심선 (좁은 도로라 5mm 안쪽)
+    hx, cx = (east - west) / 2, (east + west) / 2
     hy = PRINT_Y / 2 - (BAND_Y + OUTER_ROAD / 2)   # 남북 순환로 중심선까지
     m = lambda v: round(v / 1000, 4)
     return {
@@ -284,25 +288,27 @@ def build_layout():
         },
         "dims": {
             "outer_road_width": m(OUTER_ROAD),
+            "outer_road_width_east": m(OUTER_ROAD_E),
             "center_road_ew_width": m(CENTER_ROAD_EW),
             "center_road_ns_width": m(CENTER_ROAD_NS),
             "block_size_xy": [m(BLOCK_X), m(BLOCK_Y)],
             "outer_green_band_east_west": m(BAND_X),
+            "outer_green_band_east": m(BAND_X_E),
             "outer_green_band_north_south": m(BAND_Y),
             "block_corner_radius": m(BLOCK_R),
             "outer_road_corner_radius": m(ROAD_R),
         },
         "centerlines": {
-            "outer_loop_clockwise": rounded_rect_path(hx, hy, ROAD_R - OUTER_ROAD / 2),
+            "outer_loop_clockwise": rounded_rect_path(hx, hy, ROAD_R - OUTER_ROAD / 2, cx=cx),
             "center_north_south": [[0.0, m(hy)], [0.0, -m(hy)]],
-            "center_east_west": [[-m(hx), 0.0], [m(hx), 0.0]],
+            "center_east_west": [[m(west), 0.0], [m(east), 0.0]],
         },
         "intersections": {
             "center_4way": [0.0, 0.0],
             "T_north": [0.0, m(hy)],
-            "T_east": [m(hx), 0.0],
+            "T_east": [m(east), 0.0],
             "T_south": [0.0, -m(hy)],
-            "T_west": [-m(hx), 0.0],
+            "T_west": [m(west), 0.0],
         },
         "crosswalks": [],
         "road_marks": [],
@@ -322,7 +328,7 @@ def main():
     cv.save(OUT_DIR / "track_texture.png")
     (OUT_DIR / "track_layout.json").write_text(json.dumps(layout, ensure_ascii=False, indent=2))
     print(f"printed {PRINT_X} x {PRINT_Y} mm, block {BLOCK_X} x {BLOCK_Y} mm, "
-          f"green band E/W {BAND_X} mm, N/S {BAND_Y} mm")
+          f"green band W {BAND_X} mm, E {BAND_X_E} mm, N/S {BAND_Y} mm, east road {OUTER_ROAD_E} mm")
     print(f"{len(layout['crosswalks'])} crosswalks, {len(layout['road_marks'])} road marks, "
           f"{len(layout['prop_spots'])} prop spots")
 

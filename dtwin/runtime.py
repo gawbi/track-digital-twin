@@ -137,7 +137,7 @@ class Simulator:
             ]
 
         draw.rounded_rectangle(
-            box(-px / 2 + bandx, -py / 2 + bandy, px / 2 - bandx, py / 2 - bandy),
+            box(-px / 2 + bandx, -py / 2 + bandy, px / 2 - dims.get("outer_green_band_east", bandx), py / 2 - bandy),
             round(dims["outer_road_corner_radius"] * 1000),
             fill=255,
         )

@@ -44,6 +44,8 @@ def main():
     source.add_argument("--real-manifest", type=Path)
     p.add_argument("--final", action="store_true", help="Required to touch the test split")
     p.add_argument("--purpose", default="", help="Recorded in the test ledger")
+    p.add_argument("--turn-threshold", type=float, default=0.2,
+                   help="|normalized angular label| at or above this counts as a turning frame")
     a = p.parse_args()
     if a.split == "test" and not a.final:
         p.error("Test is reserved for the final evaluation: fix settings, then pass --final")
@@ -66,11 +68,22 @@ def main():
         ]
     if not rows:
         p.error("No labeled frames in this split")
-    errors = []
-    for path, target in rows:
-        prediction = policy.action(np.asarray(Image.open(path).convert("RGB")))
-        errors.append(np.abs(np.subtract(prediction, target)))
-    errors = np.asarray(errors)
+    predictions = np.asarray([policy.action(np.asarray(Image.open(path).convert("RGB"))) for path, _ in rows])
+    targets = np.asarray([target for _, target in rows], dtype=float)
+    errors = np.abs(predictions - targets)
+    # Turns are rare, so the overall mean hides missed curves: report them separately.
+    turning = np.abs(targets[:, 1]) >= a.turn_threshold
+    by_label = {}
+    for name, mask in [("straight", ~turning), ("turning", turning)]:
+        if mask.any():
+            by_label[name] = dict(frames=int(mask.sum()), normalized_mae=errors[mask].mean(0).tolist())
+    if turning.any():
+        t, pr = targets[turning, 1], predictions[turning, 1]
+        by_label["turning"].update(
+            same_direction=float((np.sign(pr) == np.sign(t)).mean()),
+            mean_abs_target_angular=float(np.abs(t).mean()),
+            mean_abs_predicted_angular=float(np.abs(pr).mean()),
+        )
     report = dict(
         policy=str(a.policy),
         experiment=metadata.get("experiment"),
@@ -80,6 +93,7 @@ def main():
         frames=len(rows),
         normalized_mae=errors.mean(0).tolist(),
         normalized_p95_abs_error=np.percentile(errors, 95, axis=0).tolist(),
+        by_label=dict(turn_threshold=a.turn_threshold, **by_label),
         warning="Offline label error only; report closed-loop driving separately",
     )
     if a.synthetic:

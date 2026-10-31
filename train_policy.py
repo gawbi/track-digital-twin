@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import random
 import time
 from pathlib import Path
@@ -20,6 +21,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from dtwin.actions import ACTION_SPACE
+from dtwin.core import ROOT
 from dtwin.policy import preprocess
 
 
@@ -62,7 +64,7 @@ def split_groups(episodes, seed):
     return {"test": groups[:n], "validation": groups[n : 2 * n], "train": groups[2 * n :]}
 
 
-def read_episodes(root, recovery_within_m=0.0):
+def read_episodes(root, recovery_within_m=0.0, exclude_junctions_m=0.0):
     episodes = []
     for metadata_path in sorted(Path(root).rglob("episode.json")):
         metadata = json.loads(metadata_path.read_text())
@@ -79,6 +81,15 @@ def read_episodes(root, recovery_within_m=0.0):
             if "image" in f
             and (f["footprint_on_road"] or f.get("route_distance_m", 1) <= recovery_within_m)
         ]
+        if exclude_junctions_m > 0 and metadata.get("route") == "inner":
+            # Lane keeping only: which way to turn at a junction is not visible in one
+            # image (it comes from direction signs via the junction navigator).
+            centers = list(json.loads((ROOT / "track_layout.json").read_text())["intersections"].values())
+            frames = [
+                f
+                for f in frames
+                if min(math.dist(f["pose_xy_yaw"][:2], c) for c in centers) > exclude_junctions_m
+            ]
         if frames:
             episodes.append(
                 dict(
@@ -201,6 +212,12 @@ def main():
     )
     p.add_argument("--workers", type=int, default=8, help="DataLoader workers (JPEG decoding)")
     p.add_argument(
+        "--exclude-junctions",
+        type=float,
+        default=0.0,
+        help="Drop inner-route frames within this distance (m) of junction centers (lane keeping only)",
+    )
+    p.add_argument(
         "--recovery-within",
         type=float,
         default=0.0,
@@ -224,7 +241,7 @@ def main():
     if a.data:
         episodes = []
         for root in a.data:
-            episodes += read_episodes(root, a.recovery_within)
+            episodes += read_episodes(root, a.recovery_within, a.exclude_junctions)
         for episode in episodes:
             episode["frames"] = episode["frames"][:: a.frame_stride]
         splits = split_groups(episodes, a.seed)
@@ -338,6 +355,7 @@ def main():
         seed=a.seed,
         frame_stride=a.frame_stride,
         recovery_within_m=a.recovery_within,
+        exclude_junctions_m=a.exclude_junctions,
         synthetic_roots=[str(root) for root in a.data],
         splits=splits,
         synthetic_seed_history=sorted(history_seeds),

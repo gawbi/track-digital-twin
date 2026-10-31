@@ -219,6 +219,14 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
     key.CreateIntensityAttr(params["key_intensity"])
     key.CreateEnableColorTemperatureAttr(True)
     key.CreateColorTemperatureAttr(params["light_temperature_k"])
+    # Low, distant sources (windows, far lamps); with a glossy mat they leave glare on the road.
+    for i, light in enumerate(params.get("glare_lights", [])):
+        glare = UsdLux.SphereLight.Define(stage, f"/World/Glare{i}")
+        transform(glare.GetPrim(), tuple(light["position"]))
+        glare.CreateRadiusAttr(light["radius"])
+        glare.CreateIntensityAttr(light["intensity"])
+        glare.CreateEnableColorTemperatureAttr(True)
+        glare.CreateColorTemperatureAttr(params["light_temperature_k"])
     black = material(stage, "/World/Materials/Black", (0.025, 0.028, 0.035))
     yellow = material(stage, "/World/Materials/Yellow", (0.85, 0.6, 0.03))
     white = material(stage, "/World/Materials/White", (0.8, 0.8, 0.77))

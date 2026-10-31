@@ -26,6 +26,8 @@ def main():
     p.add_argument("--offroad-grace", type=float, help="collect: seconds off road before stopping")
     p.add_argument("--dagger-policy", type=Path, help="collect: policy drives, teacher labels")
     p.add_argument("--policy-speed-scale", type=float, default=1.0, help="evaluate: command scale")
+    p.add_argument("--harsh", action="store_true", help="collect: glare/brightness/motor training randomization")
+    p.add_argument("--teacher-speed-scale", type=float, default=1.0, help="collect: teacher top speed fraction")
     a = p.parse_args()
     if a.mode == "evaluate" and not a.policy:
         p.error("evaluate requires --policy")
@@ -80,6 +82,9 @@ def main():
                 command += ["--offroad-grace", str(a.offroad_grace)]
             if a.dagger_policy:
                 command += ["--policy", str(a.dagger_policy.resolve())]
+            if a.harsh:
+                command.append("--harsh")
+            command += ["--teacher-speed-scale", str(a.teacher_speed_scale)]
         else:
             command += ["--policy", str(a.policy.resolve())]
             command += ["--policy-speed-scale", str(a.policy_speed_scale)]

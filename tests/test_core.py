@@ -53,6 +53,21 @@ class GeometryTests(unittest.TestCase):
         self.assertNotEqual(a, sample_episode(self.cfg, 124, True))
         self.assertEqual(self.cfg["camera"]["z_m"], height)
 
+    def test_harsh_training_draws_keep_ordinary_seeds_and_add_glare_lights(self):
+        plain_cfg, plain = sample_episode(self.cfg, 123, True)
+        harsh_cfg, harsh = sample_episode(self.cfg, 123, True, harsh=True)
+        self.assertNotIn("glare_lights", plain)
+        # Everything drawn before the harsh block is identical for the same seed.
+        for name in ["dome_intensity", "key_intensity", "friction", "skid_yaw_efficiency"]:
+            self.assertEqual(plain[name], harsh[name])
+        h = self.cfg["randomization"]["harsh"]
+        self.assertTrue(h["glare_lights"][0] <= len(harsh["glare_lights"]) <= h["glare_lights"][1])
+        self.assertTrue(h["image_gain"][0] <= harsh["image_gain"] <= h["image_gain"][1])
+        extra = harsh_cfg["camera"]["pitch_down_deg"] - plain_cfg["camera"]["pitch_down_deg"]
+        self.assertTrue(h["extra_pitch_deg"][0] <= extra <= h["extra_pitch_deg"][1])
+        glossy = [sample_episode(self.cfg, s, True, harsh=True)[1]["roughness"] for s in range(200, 260)]
+        self.assertTrue(any(r <= h["glossy_roughness"][1] for r in glossy))
+
     def test_gpio_bridge_left_and_right_match_course_pins(self):
         devices = {}
         gpio = gpio_module(devices)

@@ -160,16 +160,21 @@ class Frames(Dataset):
         return torch.from_numpy(preprocess(rgb)), torch.from_numpy(target)
 
 
-def evaluate(model, loader, device):
+def evaluate(model, loader, device, turn_threshold=0.2):
+    """Mean |error| per output, and angular |error| on turning labels only (None if none)."""
     total = np.zeros(2)
-    count = 0
+    count, turn_total, turn_count = 0, 0.0, 0
     model.eval()
     with torch.no_grad():
         for image, target in loader:
-            delta = (model(image.to(device)) - target.to(device)).abs().sum(0).cpu().numpy()
-            total += delta
+            target = target.to(device)
+            delta = (model(image.to(device)) - target).abs()
+            total += delta.sum(0).cpu().numpy()
             count += len(image)
-    return (total / max(1, count)).tolist()
+            turning = target[:, 1].abs() >= turn_threshold
+            turn_total += float(delta[turning, 1].sum())
+            turn_count += int(turning.sum())
+    return (total / max(1, count)).tolist(), (turn_total / turn_count if turn_count else None)
 
 
 def sha256(path):
@@ -205,6 +210,12 @@ def main():
         "--select-on",
         choices=["synthetic", "real"],
         help="Validation used to pick the epoch (default: real when a manifest is given)",
+    )
+    p.add_argument(
+        "--select-metric",
+        choices=["mae", "turning"],
+        default="mae",
+        help="Pick the epoch by overall MAE, or by angular MAE on turning labels (|angular| >= 0.2)",
     )
     p.add_argument("--experiment", default="", help="Name recorded in metadata, e.g. A/B/C")
     p.add_argument(
@@ -315,14 +326,19 @@ def main():
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             steps += 1
-        validation = evaluate(model, loaders["validation"], a.device)
-        row = {"epoch": epoch + 1, "validation_normalized_mae": validation}
+        validation, turning = evaluate(model, loaders["validation"], a.device)
+        row = {"epoch": epoch + 1, "validation_normalized_mae": validation,
+               "validation_turning_angular_mae": turning}
         if "real_validation" in loaders:
-            row["real_validation_normalized_mae"] = evaluate(model, loaders["real_validation"], a.device)
+            real_mae, real_turning = evaluate(model, loaders["real_validation"], a.device)
+            row["real_validation_normalized_mae"] = real_mae
+            row["real_validation_turning_angular_mae"] = real_turning
         history.append(row)
         print(json.dumps(row), flush=True)
-        if sum(validation) < best_loss:
-            best_loss, best = sum(validation), copy.deepcopy(model.state_dict())
+        # Turning frames are rare; the overall mean can improve while curves get worse.
+        score = turning if a.select_metric == "turning" and turning is not None else sum(validation)
+        if score < best_loss:
+            best_loss, best = score, copy.deepcopy(model.state_dict())
             best_epoch = epoch + 1
     model.load_state_dict(best)
     a.output.mkdir(parents=True, exist_ok=False)
@@ -361,6 +377,7 @@ def main():
         synthetic_seed_history=sorted(history_seeds),
         train_on=train_on,
         select_on=select_on,
+        select_metric=a.select_metric,
         optimizer=dict(name="AdamW", lr=a.lr, weight_decay=a.weight_decay),
         epochs=a.epochs,
         best_epoch=best_epoch,

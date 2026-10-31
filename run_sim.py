@@ -22,6 +22,10 @@ def parser():
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--randomize", action="store_true")
     p.add_argument("--stress", action="store_true")
+    p.add_argument("--harsh", action="store_true",
+                   help="Training randomization: glare, wide brightness, motor mismatch (needs --randomize)")
+    p.add_argument("--teacher-speed-scale", type=float, default=1.0,
+                   help="Teacher top speed as a fraction of max_speed (real drivers use about half)")
     p.add_argument("--duration", type=float)
     p.add_argument("--headless", action="store_true")
     p.add_argument("--record", action="store_true", help="Save camera images for training")
@@ -162,7 +166,11 @@ def main():
         raise SystemExit("Legacy course script requires --legacy-model and GUI (OpenCV windows)")
     if args.legacy_script and not (args.legacy_script.is_file() and args.legacy_model.is_file()):
         raise SystemExit("Legacy script/model file does not exist")
-    cfg, params = sample_episode(base, args.seed, args.randomize, args.stress)
+    if args.harsh and (args.stress or not args.randomize):
+        raise SystemExit("--harsh is a training randomization: use it with --randomize, not --stress")
+    if not 0 < args.teacher_speed_scale <= 1:
+        raise SystemExit("--teacher-speed-scale must be in (0, 1]")
+    cfg, params = sample_episode(base, args.seed, args.randomize, args.stress, args.harsh)
     if args.randomize or args.stress:
         randomize_props(cfg, layout, args.seed)
     if args.chase_video:
@@ -204,9 +212,10 @@ def main():
         follower = PathFollower(
             route_points(layout, args.route),
             simcfg["lookahead_m"],
-            simcfg["max_speed_m_s"],
+            simcfg["max_speed_m_s"] * args.teacher_speed_scale,
             simcfg["max_yaw_rad_s"],
         )
+        summary["teacher_speed_scale"] = args.teacher_speed_scale
         progress = Progress(follower.total_length)
         mission_gates = None
         if args.missions:

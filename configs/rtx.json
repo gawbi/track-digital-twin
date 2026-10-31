@@ -4,6 +4,7 @@
     "vehicle_length_m": "측정: 차량치수 사진, 약 25cm",
     "body_width_m": "측정: 약 10cm; 바퀴 포함 전체 폭 16cm",
     "track_width_m": "측정 2026-10-31: 좌우 바퀴 중심 13cm",
+    "randomization_harsh": "추정 2026-10-31: 학습용(--harsh). 실차 이탈 지점의 매트 반사(사진 IMG_1902/1903), 낮고 먼 광원(창문·먼 조명)의 반사와 가혹 평가(밝기 0.55/1.5, 거칠기 0.08, 좌우 모터 0.75/1.2, 기울기 ±8°, 지연 3)를 덮도록 정함. 가혹 평가 seed는 학습에 쓰지 않음",
     "wheel_radius_m": "측정 2026-10-31: 바퀴 지름 약 6.5cm",
     "wheelbase_m": "측정 2026-10-31: 앞뒤 바퀴 중심 12.5cm",
     "mass_kg": "추정: 실차 무게와 모터 토크 실측 필요",
@@ -50,7 +51,14 @@
     "latency_frames": [0, 2],
     "skid_yaw_efficiency": [0.33, 0.55], "motor_time_constant_s": [0.04, 0.15],
     "image_blur_sigma": [0.0, 1.3], "image_channel_gain": [0.85, 1.15],
-    "distortion_k1_delta": [-0.05, 0.05], "focal_scale_delta": [-0.04, 0.04]
+    "distortion_k1_delta": [-0.05, 0.05], "focal_scale_delta": [-0.04, 0.04],
+    "harsh": {
+      "glossy_probability": 0.6, "glossy_roughness": [0.03, 0.25],
+      "image_gain": [0.5, 1.6], "image_noise_std": [0.0, 9.0], "latency_frames": [0, 3],
+      "motor_gain": [0.75, 1.2], "extra_pitch_deg": [-6.0, 6.0],
+      "glare_lights": [1, 4], "light_distance_m": [1.3, 1.8], "light_height_m": [0.3, 1.8],
+      "light_radius_m": [0.05, 0.3], "light_intensity": [3000.0, 30000.0]
+    }
   },
   "missions": {
     "sign_bottom_m": 0.103, "signal_bottom_m": 0.075,

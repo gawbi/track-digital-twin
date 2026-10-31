@@ -77,8 +77,12 @@ def load_inputs(config_path=None):
     return cfg, layout
 
 
-def sample_episode(base, seed, randomize=False, stress=False):
-    """A seed completely identifies scene parameters. Stress uses held-out ranges."""
+def sample_episode(base, seed, randomize=False, stress=False, harsh=False):
+    """A seed completely identifies scene parameters. Stress uses held-out ranges.
+
+    ``harsh`` (training only) widens appearance/actuation draws toward the stress
+    conditions and adds low distant lights whose specular glare the real mat shows.
+    """
     cfg = copy.deepcopy(base)
     rng = random.Random(seed)
     r = cfg["randomization"]
@@ -145,6 +149,27 @@ def sample_episode(base, seed, randomize=False, stress=False):
                 fx=cfg["camera"]["intrinsics"]["fx"] * scale,
                 fy=cfg["camera"]["intrinsics"]["fy"] * scale,
             )
+        if harsh:
+            # Drawn after everything above so non-harsh seeds keep their parameters.
+            h = r["harsh"]
+            pick = lambda name: rng.uniform(*h[name])
+            if rng.random() < h["glossy_probability"]:
+                params["roughness"] = pick("glossy_roughness")
+            params["image_gain"] = pick("image_gain")
+            params["image_noise_std"] = pick("image_noise_std")
+            params["latency_frames"] = rng.randint(*h["latency_frames"])
+            params["motor_gain_left"], params["motor_gain_right"] = pick("motor_gain"), pick("motor_gain")
+            cfg["camera"]["pitch_down_deg"] += pick("extra_pitch_deg")
+            # The camera sits 7cm high looking 23 deg down, so it only sees reflections of
+            # light sources low and far away (windows, distant lamps), not of lamps overhead.
+            params["glare_lights"] = []
+            for _ in range(rng.randint(*h["glare_lights"])):
+                angle, distance = rng.uniform(-math.pi, math.pi), pick("light_distance_m")
+                params["glare_lights"].append(dict(
+                    position=[distance * math.cos(angle), distance * math.sin(angle), pick("light_height_m")],
+                    radius=pick("light_radius_m"),
+                    intensity=pick("light_intensity"),
+                ))
     if stress:
         params["image_gain"] = rng.choice([0.55, 1.5])
         params["image_noise_std"] = 9.0

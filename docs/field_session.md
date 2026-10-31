@@ -42,11 +42,13 @@ A4에 체커보드(9×6 내부 모서리)를 출력해 칸 한 변을 자로 잰
 
 ## 3. 운동 보정 영상 (15분) — 속도·스키드 회전 효율
 
-천장 쪽에서 휴대폰으로 트랙을 내려다보며 촬영한다. 출발점에 테이프 표시.
+고정된 상단 카메라는 필요 없다. 서서 휴대폰으로 내려다보며 찍거나, 영상 없이 줄자로 잰다.
+직진은 출발선 테이프 → 멈춘 뒤 앞 범퍼까지 거리, 제자리 회전은 `--spin-seconds 6`으로 길게 돌려 몇 바퀴인지 센다
+(예: 1¾바퀴 = 630°). 주행·인식은 차량 카메라 하나만 쓴다(시뮬레이터 영상의 상공 화면은 표시용).
 
 ```bash
 .venv-pi/bin/python tools/motion_calibration.py --motors fake --output motion-dry.json   # 먼저 모터 없이
-.venv-pi/bin/python tools/motion_calibration.py --motors gpio --output motion-1.json      # 바퀴를 들고 한 번, 다음 바닥에서
+.venv-pi/bin/python tools/motion_calibration.py --motors gpio --spin-seconds 6 --output motion-1.json  # 바닥에서
 ```
 
 직진 0.3/0.5 duty, 좌·우 제자리 회전, 좌·우 원호를 단계별로 실행하고 매 단계 정지한다. 영상에서 이동 거리(m)와

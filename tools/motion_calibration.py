@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Fixed PWM steps for measuring the real car's speed and skid turning (Raspberry Pi).
 
-Film from above with a tape mark at the start. Every step is logged with its
+Measure with a tape mark and tape measure (straight: start line to the front bumper;
+spins: count whole turns, longer with --spin-seconds 6), or film from above with a phone. Every step is logged with its
 monotonic start/stop time; the measured distance/angle from the video is entered
 afterwards with --measured to fit duty->speed gain and skid yaw efficiency.
 Motors stop between steps, on Ctrl+C and on any error. Start with --motors fake.
@@ -65,6 +66,11 @@ def main():
     p.add_argument("--motors", choices=["gpio", "fake"], default="fake")
     p.add_argument("--pause", type=float, default=3.0, help="Stopped seconds between steps")
     p.add_argument("--steps", help="Comma separated subset of step names")
+    p.add_argument(
+        "--spin-seconds",
+        type=float,
+        help="Longer in-place spins so whole turns can be counted by eye (no overhead video)",
+    )
     p.add_argument("--measured", type=Path, help="Fit an existing log with video measurements")
     a = p.parse_args()
     if a.measured:
@@ -78,6 +84,8 @@ def main():
 
     motors = GpioMotors() if a.motors == "gpio" else FakeMotors()
     chosen = [s for s in STEPS if not a.steps or s[0] in a.steps.split(",")]
+    if a.spin_seconds:
+        chosen = [(n, lt, rt, a.spin_seconds if n.startswith("spin") else t) for n, lt, rt, t in chosen]
     log = dict(system=system_snapshot(), motors=motors.description, steps=[],
                warning="Duty is a command; distances/angles must come from video or tape")
     try:

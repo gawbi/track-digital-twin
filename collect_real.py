@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Record a real session on the Raspberry Pi: RGB frames + sent commands + times.
 
-Keyboard teleop over SSH: w/s forward/back, a/d turn, x stop, q quit. A command
+Keyboard teleop over SSH: w/s forward/back, a/d turn in place, q/e forward arc
+left/right (smooth steering labels), x stop, p quit. A command
 expires after --command-timeout and the motors stop. Labels are the COMMANDS that
 were sent (normalized action and PWM duty), never measured speed; encoder data is
 written only if a real encoder adapter exists (not implemented: --encoder none).
@@ -24,7 +25,16 @@ from dtwin.actions import DutyMixer
 from dtwin.real_data import SessionWriter
 from dtwin.realtime import monotonic_ns
 
-KEYS = {"w": (1.0, 0.0), "s": (-1.0, 0.0), "a": (0.0, 1.0), "d": (0.0, -1.0), "x": (0.0, 0.0)}
+# (linear, angular) multipliers; q/e arcs give smoother steering labels than spin-only keys.
+KEYS = {
+    "w": (1.0, 0.0),
+    "s": (-1.0, 0.0),
+    "a": (0.0, 1.0),
+    "d": (0.0, -1.0),
+    "q": (1.0, 0.6),
+    "e": (1.0, -0.6),
+    "x": (0.0, 0.0),
+}
 
 
 def open_camera(spec, width, height, fps, flip180, loop=False):
@@ -53,7 +63,7 @@ class Teleop:
         self.action, self.time_ns, self.quit = (0.0, 0.0), None, threading.Event()
 
     def press(self, key):
-        if key == "q":
+        if key == "p":
             self.quit.set()
         elif key in KEYS:
             base = KEYS[key]
@@ -152,7 +162,7 @@ def main():
         threads.append(threading.Thread(target=teleop.run_terminal, name="keys", daemon=True))
     for thread in threads:
         thread.start()
-    print("Recording. w/s/a/d drive, x stop, q quit.", file=sys.stderr)
+    print("Recording. w/s fwd/back, a/d spin, q/e forward-left/right arc, x stop, p quit.", file=sys.stderr)
     start, kept, seen, status = monotonic_ns(), 0, 0, "completed"
     try:
         while not teleop.quit.is_set():

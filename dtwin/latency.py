@@ -33,6 +33,7 @@ def summarize(path_or_records, warmup_s=3.0, control_hz=50.0):
     ticks = [r for r in ticks if r["start_ns"] >= start]
     frames = [r for r in records if r["kind"] == "frame" and r["received_ns"] >= start]
     results = [r for r in records if r["kind"] == "result" and r["started_ns"] >= start]
+    detections = [r for r in records if r["kind"] == "detection" and r["started_ns"] >= start]
     period_ns = 1e9 / control_hz
     intervals = np.diff([r["start_ns"] for r in ticks]) if len(ticks) > 1 else []
     lateness = [r["lateness_ns"] for r in ticks]
@@ -70,6 +71,13 @@ def summarize(path_or_records, warmup_s=3.0, control_hz=50.0):
             },
         ),
         end_to_end_capture_to_motor_ms=stats_ms([r["applied_ns"] - r["capture_ns"] for r in first_use]),
+        detector_thread=dict(
+            results=len(detections),
+            detector_ms=stats_ms([r["finished_ns"] - r["started_ns"] for r in detections]),
+            capture_to_detection_ms=stats_ms([r["finished_ns"] - r["capture_ns"] for r in detections]),
+        )
+        if detections
+        else None,
         control=dict(
             target_period_ms=round(period_ns / 1e6, 3),
             ticks=len(ticks),

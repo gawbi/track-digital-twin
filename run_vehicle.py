@@ -31,19 +31,57 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def make_perceiver(policy, detector=None, detect_every=1):
-    state = {"n": 0}
+class DetectorWorker:
+    """Sign detector on its own thread so a slow detector never delays lane control.
 
+    It reads the newest camera frame (without consuming it) and keeps the latest
+    detections with their capture time. Observation only: nothing here drives motors.
+    """
+
+    def __init__(self, detector, frames, telemetry, clock):
+        self.detector, self.frames, self.telemetry, self.clock = detector, frames, telemetry, clock
+        self.latest, self.stop, self.error = None, threading.Event(), None
+        self.thread = threading.Thread(target=self._loop, name="detector", daemon=True)
+
+    def _loop(self):
+        version = 0
+        try:
+            while not self.stop.is_set():
+                current, frame = self.frames.peek()
+                if frame is None or current == version:
+                    time.sleep(0.003)
+                    continue
+                version = current
+                started = self.clock()
+                detections = self.detector.detect(frame.rgb)
+                finished = self.clock()
+                self.latest = dict(frame_id=frame.frame_id, capture_ns=frame.capture_ns, detections=detections)
+                self.telemetry.write(
+                    "detection",
+                    frame_id=frame.frame_id,
+                    capture_ns=frame.capture_ns,
+                    started_ns=started,
+                    finished_ns=finished,
+                    detections=detections,
+                )
+        except Exception as error:  # noqa: BLE001 - observation only; lane control continues
+            self.error = repr(error)
+            self.telemetry.write("detector_error", error=self.error)
+
+
+def make_perceiver(policy, worker=None):
     def perceive(frame):
         stages = {}
         action = policy.action(frame.rgb, stages)
         info = {}
-        if detector is not None and state["n"] % detect_every == 0:
-            start = time.monotonic_ns()
-            info["detections"] = detector.detect(frame.rgb)
-            stages["detector_ns"] = time.monotonic_ns() - start
-            info["detector_role"] = "observation_only"
-        state["n"] += 1
+        if worker is not None and worker.latest is not None:
+            latest = worker.latest
+            info = dict(
+                detector_role="observation_only",
+                detection_frame_id=latest["frame_id"],
+                detection_age_ms=round((frame.capture_ns - latest["capture_ns"]) / 1e6, 1),
+                detections=[d["class"] for d in latest["detections"]],
+            )
         return {"action": action, "stages": stages, "info": info}
 
     return perceive
@@ -53,7 +91,6 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--policy", type=Path, required=True)
     p.add_argument("--detector", type=Path, help="Logged only (no encoders)")
-    p.add_argument("--detect-every", type=int, default=1)
     p.add_argument("--missions", action="store_true", help="Needs wheel encoders; refused")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--calibration", type=Path, help="Duty mixer JSON (default simulator ratio [추정])")
@@ -97,7 +134,7 @@ def main():
         policy=dict(path=str(a.policy), sha256=sha256(a.policy), metadata=policy.metadata),
         detector=None
         if not a.detector
-        else dict(path=str(a.detector), sha256=sha256(a.detector), every=a.detect_every),
+        else dict(path=str(a.detector), sha256=sha256(a.detector), thread="separate"),
         camera=getattr(camera, "description", {}),
         motors=getattr(motors, "description", {}),
         mixer=mixer.to_json(),
@@ -108,7 +145,7 @@ def main():
     telemetry = Telemetry(a.output / "telemetry.jsonl")
     runtime = VehicleRuntime(
         camera,
-        make_perceiver(policy, detector, a.detect_every),
+        None,
         motors,
         mixer,
         control_hz=a.control_hz,
@@ -118,6 +155,11 @@ def main():
         speed_scale=a.speed_scale,
         telemetry=telemetry,
     )
+    worker = None
+    if detector is not None:
+        worker = DetectorWorker(detector, runtime.frames, telemetry, runtime.clock)
+        worker.thread.start()
+    runtime.perceive = make_perceiver(policy, worker)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     try:
@@ -126,6 +168,9 @@ def main():
         result = dict(counts=runtime.counts, stop_reasons=runtime.stop_reasons, fault="user_interrupt")
     finally:
         motors.stop()
+        if worker is not None:
+            worker.stop.set()
+            worker.thread.join(timeout=2)
         telemetry.close()
         if hasattr(motors, "close"):
             motors.close()

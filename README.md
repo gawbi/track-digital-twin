@@ -112,8 +112,8 @@ python train_policy.py outputs/train-v5 --real-manifest outputs/real/manifest-10
 python evaluate_lane_offline.py --split validation --real-manifest outputs/real/manifest-1031.json \
     models/lane-v5/policy.onnx                                     # 직선·커브 분리 점수
 
-# Raspberry Pi 5 실차
-.venv-pi/bin/python run_vehicle.py --policy models/lane-real-C/policy.onnx --motors gpio \
+# Raspberry Pi 5 실차 (모델은 저장소 밖에서 받음, 절차는 PI_TEST_PROMPT.md)
+.venv-pi/bin/python run_vehicle.py --policy models/lane-real-C5b/policy.onnx --motors gpio \
     --flip180 --calibration configs/real_car.json --speed-scale 0.5 --duration 180
 ```
 
@@ -129,6 +129,7 @@ python evaluate_lane_offline.py --split validation --real-manifest outputs/real/
 | [미션 제어](docs/autonomy.md) | 검출·추적·거리 추정·교차로 제어 |
 | [트랙 도면](docs/track.md) | 치수와 출처, 좌표계, 대상 차량 |
 | [시작 프롬프트](START_HERE_PROMPT.md) · [인계 프롬프트](RTX_HANDOFF_PROMPT.md) | 새 RTX 노트북에서 코딩 에이전트로 clone부터 이어서 진행 |
+| [실차 시험 프롬프트](PI_TEST_PROMPT.md) | 다른 코딩 에이전트가 Pi에서 C5b·A5b·C를 같은 조건으로 실차 비교하고 결과를 정리 |
 | [차량·카메라 설정](configs/rtx.json) | 실측값·추정값 출처, 무작위화 범위 |
 
 ## 공개 범위

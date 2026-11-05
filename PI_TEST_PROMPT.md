@@ -1,7 +1,7 @@
 # 실차 차선 주행 A/B/C 비교 시험 — 코딩 에이전트용 프롬프트
 
 아래 `---` 다음 전체를 새 Claude(또는 다른 코딩 에이전트) 대화에 붙여 넣는다. Pi 안에서 실행하는 에이전트, 노트북에서 SSH로 Pi에 접속하는 에이전트 모두 쓸 수 있다.
-모델 파일은 이 공개 저장소에 없고, 저장소 담당자(gawbi)에게 받은 `pi_models_2026-10-31.zip`에 들어 있다.
+모델 파일은 GitHub Release `models-2026-11-01`의 `pi_models_2026-10-31.zip`에 있다: https://github.com/gawbi/track-digital-twin/releases/download/models-2026-11-01/pi_models_2026-10-31.zip
 
 ---
 
@@ -11,7 +11,8 @@
 
 - 저장소: https://github.com/gawbi/track-digital-twin (`main`). 주제는 "Sim-to-Real Gap 극복"이다. Isaac Sim 디지털 트윈에서 학습한 카메라 차선 주행 CNN을 실차로 옮기면서 생기는 간극을 측정하고 줄인다. 먼저 `README.md`와 `docs/validation.md`의 "실차 자율주행 A/B/C"와 "반사·가혹 무작위화 v5" 절을 읽는다.
 - 모델은 카메라 사진 한 장(640×480, 180° 회전, 아래쪽 절반)을 보고 `[전진, 회전]` 두 값(각 −1~1, 행동 규약 `normalized_linear_angular_v1`)을 낸다. `run_vehicle.py`가 이 값을 `configs/real_car.json`의 보정으로 좌우 모터 PWM duty로 바꾼다. **duty는 명령일 뿐 측정 속도가 아니다.** 차에는 엔코더가 없다.
-- 모델은 GitHub에 없다. 운영자가 주는 `pi_models_2026-10-31.zip`에 들어 있다.
+- 모델은 저장소 안이 아니라 GitHub Release `models-2026-11-01`의 `pi_models_2026-10-31.zip`에 있다.
+  `wget https://github.com/gawbi/track-digital-twin/releases/download/models-2026-11-01/pi_models_2026-10-31.zip` 으로 받는다(Pi에 인터넷이 없으면 운영자가 노트북에서 받아 `scp`로 넣는다).
 
 | 폴더 | 이름 | 학습 | 지금까지 결과 |
 |---|---|---|---|
@@ -34,7 +35,7 @@
    .venv-pi/bin/pip install onnxruntime pillow
    ```
    이미 있으면 `git -C ~/track-digital-twin status`로 로컬 수정이 있는지 보고, 없을 때만 `git pull`한다. 로컬 수정이나 다른 사람 파일이 있으면 건드리지 말고 운영자에게 묻는다.
-2. 운영자가 준 zip의 `models/`와 `configs/`를 `~/track-digital-twin/` 아래에 복사한다. 다섯 모델 모두 `policy.onnx`와 `policy.json`이 짝으로 있는지 확인한다.
+2. 받은 zip을 풀고 `models/`와 `configs/`를 `~/track-digital-twin/` 아래에 복사한다. 기존 `models/` 안의 다른 폴더는 지우지 않는다. 다섯 모델 모두 `policy.onnx`와 `policy.json`이 짝으로 있는지 확인한다.
 3. `.venv-pi/bin/python -c "import picamera2, gpiozero, onnxruntime, cv2; print('ok')"`
 4. 모터 없이 10초 시험으로 카메라와 모델을 점검한다(차가 움직이지 않는다).
    ```
@@ -83,7 +84,7 @@
 
 ## 5. 하지 말 것
 
-- 모델, 실제 사진·영상, 주행 기록을 GitHub에 올리지 않는다. 저장소는 공개다.
+- 실제 사진·영상, 주행 기록(`runs/`)을 GitHub에 올리지 않는다. 저장소는 공개다. 새 모델 공개는 저장소 담당자가 Release로 한다.
 - 실제 데이터의 test 분할(어두운 조명 세션)로 평가하지 않는다.
 - Pi에 있는 다른 사람의 폴더(`~/TEST`, `camera_images_*` 등)를 지우거나 수정하지 않는다.
 - 실행하지 않은 시험을 한 것처럼 보고하지 않는다. 안 한 것은 "미실행"으로 적는다.

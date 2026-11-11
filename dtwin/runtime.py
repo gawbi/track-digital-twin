@@ -168,7 +168,7 @@ class Simulator:
         else:
             from isaacsim.core.experimental.utils.semantics import add_labels
 
-            add_labels(prim, [label])
+            add_labels(prim, labels=[label])  # keyword-only since Isaac Sim 6.2
 
     def detections(self):
         data = self.boxes.get_data()
@@ -319,7 +319,10 @@ class Simulator:
             self.world.render()
         else:
             self.sm.step(steps=steps)
-            self.renderer.render()
+            import omni.replicator.core as rep
+
+            # Isaac Sim 6.2: RenderingManager.render() alone leaves annotators empty.
+            rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
         if count:
             self.frame += 1
 

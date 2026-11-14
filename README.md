@@ -2,7 +2,7 @@
 
 **Sim-to-Real Gap 극복: Isaac Sim 디지털 트윈에서 배운 카메라 자율주행을 라즈베리파이 실차로 옮기기**
 
-라즈베리파이 자율주행 실습 트랙을 NVIDIA Isaac Sim 5.1 안에 그대로 만들고(디지털 트윈),
+라즈베리파이 자율주행 실습 트랙을 NVIDIA Isaac Sim(5.1로 개발, 2026-11-14부터 6.2) 안에 그대로 만들고(디지털 트윈),
 가상 트랙에서 카메라 영상만 보고 운전하는 CNN을 학습한 뒤, 같은 모델을 Raspberry Pi 5 실차에서 돌립니다.
 이 저장소의 핵심 질문은 하나입니다. **"시뮬레이터에서 잘 달리는 모델이 왜 실차에서는 못 달리고, 어떻게 메우는가?"**
 
@@ -18,7 +18,7 @@
 
 ```mermaid
 flowchart LR
-    T["실측 트랙<br/>줄자·원근 보정 사진"] --> S["Isaac Sim 5.1<br/>디지털 트윈"]
+    T["실측 트랙<br/>줄자·원근 보정 사진"] --> S["Isaac Sim 6.2<br/>디지털 트윈"]
     S -->|"교사 주행 + 무작위화<br/>(조명·반사·카메라·모터)"| SD["합성 데이터"]
     SD --> A["A: 합성만"]
     R["실차 키보드 주행<br/>세션 단위 고정 분할"] --> B["B: 실제만"]
@@ -101,7 +101,7 @@ test는 최종 1회만 씁니다(아직 미사용). 자세한 수치는 [검증 
 
 ```bash
 # Isaac Sim (Ubuntu, RTX GPU) — 설치는 docs/rtx_ubuntu.md
-export ISAAC_PY="$HOME/isaacsim_env/bin/python"
+export ISAAC_PY="$HOME/isaacsim62_env/bin/python"   # 6.2 (5.1은 현재 드라이버에서 시작 직후 종료)
 "$ISAAC_PY" run_sim.py --check
 python3 run_batch.py --python "$ISAAC_PY" --mode collect --count 30 --harsh \
     --teacher-speed-scale 0.55 --output outputs/train-v5          # 반사·가혹 무작위화 수집
@@ -130,6 +130,7 @@ wget https://github.com/gawbi/track-digital-twin/releases/download/models-2026-1
 | [미션 제어](docs/autonomy.md) | 검출·추적·거리 추정·교차로 제어 |
 | [트랙 도면](docs/track.md) | 치수와 출처, 좌표계, 대상 차량 |
 | [시작 프롬프트](START_HERE_PROMPT.md) · [인계 프롬프트](RTX_HANDOFF_PROMPT.md) | 새 RTX 노트북에서 코딩 에이전트로 clone부터 이어서 진행 |
+| [관문 2: 원철님 시뮬레이터 평가](tools/bench_gate.py) | 우리 모델을 원철님 시뮬레이터 98조건에서 단독·하이브리드로 채점 |
 | [실차 시험 프롬프트](PI_TEST_PROMPT.md) | 다른 코딩 에이전트가 Pi에서 C5b·A5b·C를 같은 조건으로 실차 비교하고 결과를 정리 |
 | [차량·카메라 설정](configs/rtx.json) | 실측값·추정값 출처, 무작위화 범위 |
 

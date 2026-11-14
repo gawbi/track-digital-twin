@@ -8,8 +8,13 @@ registered only inside this script's child processes. Same scoring and CNN speed
 the bench reports, so the numbers compare with 원철's tables.
 
     python tools/bench_gate.py --bench ../AutoMobile-bench --model A5b=models/lane-v5b \
-        --model A6=models/lane-a6 --hybrid --workers 8 --out outputs/bench_gate/a6
+        --model A6=models/lane-a6 --model W=../AutoMobile-bench/cnn_finetune/models/direct_v2@direct \
+        --hybrid --workers 8 --out outputs/bench_gate/a6
     python tools/bench_gate.py --bench ../AutoMobile-bench --out outputs/bench_gate/a6 --report
+
+NAME=FOLDER[@MIXER]: MIXER is the hybrid's CNN-to-wheel conversion (BENCH_CNN_MIXER), default "v4"
+(원철's baseline arm for A5b). "direct" models output [duty, curvature] (원철's cnn_finetune) and run
+only inside the hybrid, with BENCH_CNN_ONNX pointing at their network.
 """
 
 import argparse
@@ -31,10 +36,11 @@ def specs(bench, models, hybrid):
     for sp in bench_specs():
         if sp["group"] not in GROUPS or sp["controller"] != "cnnA5b":
             continue
-        for name, path in models.items():
-            for arm in ("cnn", "hyb2") if hybrid else ("cnn",):
+        for name, (path, mixer) in models.items():
+            arms = ("hyb2",) if mixer == "direct" else ("cnn", "hyb2") if hybrid else ("cnn",)
+            for arm in arms:
                 slug = f"{sp['group']}__{arm}_{name}__{sp['vehicle'].replace(':', '')}__{'+'.join(sp['effects']) or 'none'}__{sp['direction']}__{sp['variation']}__s{sp['seed']}"
-                out.append(dict(sp, arm=arm, model=name, model_path=str(path), slug=slug))
+                out.append(dict(sp, arm=arm, model=name, model_path=str(path), mixer=mixer, slug=slug))
     return out
 
 
@@ -43,7 +49,10 @@ def run_one(spec, bench, out):
     if (dst / "summary.json").exists():
         return spec["slug"], "cached"
     cmd = [sys.executable, str(Path(__file__).resolve()), "--child", json.dumps(spec), "--bench", str(bench), "--out", str(dst)]
-    env = dict(os.environ, BENCH_CNN_SPEED="1.0", OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1")
+    env = dict(os.environ, BENCH_CNN_SPEED="1.0", OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+               BENCH_CNN_MIXER=spec["mixer"])
+    if spec["mixer"] == "direct":
+        env["BENCH_CNN_ONNX"] = str(Path(spec["model_path"]) / "policy.onnx")
     r = subprocess.run(cmd, cwd=bench, env=env, capture_output=True, text=True)
     return spec["slug"], (r.stdout.strip().splitlines() or [""])[-1] if r.returncode == 0 else "FAIL " + r.stderr[-400:]
 
@@ -57,6 +66,11 @@ def child(spec, bench, out):
     from dtwin.policy import CONTRACTS
 
     folder = Path(spec["model_path"]).resolve()
+    if spec["mixer"] == "direct":  # the bench's own hyb2 loads it via BENCH_CNN_ONNX
+        params = R.vehicle_from_args(spec["vehicle"], None)
+        s = R.run("hyb2", params, spec["effects"], spec["direction"], spec["timing"], spec["seed"], 200.0, out,
+                  False, spec["variation"])
+        return print(json.dumps({k: s[k] for k in ("outcome", "verified_lap", "min_margin_cm", "outside_s")}, default=float))
     members = {"model": str(folder)}
     gap = CONTRACTS[json.loads((folder / "policy.json").read_text())["preprocess"]]
     if gap:  # two-frame model: the bench only knows single images, so feed the frame `gap` steps back
@@ -101,12 +115,12 @@ def report(bench, out, models, hybrid):
     for group in GROUPS:
         lines.append(f"\n## {group}\n")
         for arm in dict.fromkeys(r["arm"] for r in rows):
-            for name in models:
+            for name, (_, mixer) in models.items():
                 g = [r["r"] for r in rows if r["group"] == group and r["arm"] == arm and r["model"] == name]
                 if not g:
                     continue
                 m = np.array([x["min_margin_cm"] for x in g])
-                lines.append(f"- {arm} {name}: laps {sum(x['verified_lap'] for x in g)}/{len(g)}, clean "
+                lines.append(f"- {arm} {name} ({mixer if arm == 'hyb2' else 'team'}): laps {sum(x['verified_lap'] for x in g)}/{len(g)}, clean "
                              f"{sum(x['clean_lap'] for x in g)}/{len(g)}, min margin median {np.median(m):+.2f} "
                              f"worst {m.min():+.2f} cm, departed {sum(x['outcome'] == 'severe_departure' for x in g)}")
     text = "\n".join(lines)
@@ -127,9 +141,15 @@ def main():
     bench = a.bench.resolve()
     if a.child:
         return child(json.loads(a.child), bench, a.out)
-    models = dict(m.split("=", 1) for m in a.model) if a.model else json.loads((a.out / "models.json").read_text())
-    models = {k: str(Path(v).resolve()) for k, v in models.items()}
-    for path in models.values():
+    if a.model:
+        models = {}
+        for m in a.model:
+            name, rest = m.split("=", 1)
+            path, _, mixer = rest.partition("@")
+            models[name] = [str(Path(path).resolve()), mixer or "v4"]
+    else:
+        models = json.loads((a.out / "models.json").read_text())
+    for path, _ in models.values():
         if not (Path(path) / "policy.onnx").is_file():
             p.error(f"{path} has no policy.onnx")
     a.out.mkdir(parents=True, exist_ok=True)

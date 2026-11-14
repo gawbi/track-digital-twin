@@ -139,6 +139,7 @@ def main():
     p.add_argument("--child", help=argparse.SUPPRESS)
     a = p.parse_args()
     bench = a.bench.resolve()
+    a.out = a.out.resolve()  # children run with cwd=bench
     if a.child:
         return child(json.loads(a.child), bench, a.out)
     if a.model:

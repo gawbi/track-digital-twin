@@ -22,14 +22,14 @@ from torch.utils.data import DataLoader, Dataset
 
 from dtwin.actions import ACTION_SPACE
 from dtwin.core import ROOT
-from dtwin.policy import preprocess
+from dtwin.policy import BASE_CONTRACT, preprocess, previous_image
 
 
 class LanePolicy(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels=3):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(3, 24, 5, 2),
+            nn.Conv2d(in_channels, 24, 5, 2),
             nn.ELU(),
             nn.Conv2d(24, 36, 5, 2),
             nn.ELU(),
@@ -121,10 +121,10 @@ def read_real(manifest_path, split):
 class Frames(Dataset):
     """Synthetic expert frames (by scene seed group) and/or real recorded frames."""
 
-    def __init__(self, episodes, groups, augment=False, real_rows=()):
+    def __init__(self, episodes, groups, augment=False, real_rows=(), gap=0):
         self.rows = [("sim", e, f) for e in episodes if e["group"] in groups for f in e["frames"]]
         self.rows += [("real", None, row) for row in real_rows]
-        self.augment = augment
+        self.augment, self.gap = augment, gap  # gap > 0: also the frame `gap` frames earlier
 
     def __len__(self):
         return len(self.rows)
@@ -133,11 +133,13 @@ class Frames(Dataset):
         from PIL import Image
 
         source, episode, frame = self.rows[index]
+        folder = frame["path"] if source == "real" else episode["path"]
+        load = lambda image: np.asarray(Image.open(folder / image).convert("RGB")).copy()
+        rgb = load(frame["image"])
+        earlier = load(previous_image(folder, frame["image"], self.gap)) if self.gap else None
         if source == "real":
-            rgb = np.asarray(Image.open(frame["path"] / frame["image"]).convert("RGB")).copy()
             target = np.array(frame["action"], dtype=np.float32)
         else:
-            rgb = np.asarray(Image.open(episode["path"] / frame["image"]).convert("RGB")).copy()
             cfg = episode["metadata"]["config"]["simulation"]
             target = np.array(
                 [
@@ -148,16 +150,21 @@ class Frames(Dataset):
             )
         if np.max(np.abs(target)) > 1.001:
             raise ValueError("Recorded commands exceed configured policy limits")
-        if self.augment:
-            if random.random() < 0.5:
-                rgb = rgb[:, ::-1].copy()
+        images = [rgb] if earlier is None else [rgb, earlier]
+        if self.augment:  # the same flip / gain / tint for both frames; noise is per frame
+            flip = random.random() < 0.5
+            if flip:
                 target[1] *= -1
             gain = random.uniform(0.7, 1.3)
             channels = np.array([random.uniform(0.9, 1.1), 1, random.uniform(0.9, 1.1)])
-            rgb = np.clip(
-                rgb * gain * channels + np.random.normal(0, random.uniform(0, 5), rgb.shape), 0, 255
-            ).astype(np.uint8)
-        return torch.from_numpy(preprocess(rgb)), torch.from_numpy(target)
+            sigma = random.uniform(0, 5)
+            images = [
+                np.clip((im[:, ::-1] if flip else im) * gain * channels + np.random.normal(0, sigma, im.shape), 0, 255)
+                .astype(np.uint8)
+                for im in images
+            ]
+        tensor = np.concatenate([preprocess(im) for im in images])
+        return torch.from_numpy(tensor), torch.from_numpy(target)
 
 
 def evaluate(model, loader, device, turn_threshold=0.2):
@@ -217,6 +224,8 @@ def main():
         default="mae",
         help="Pick the epoch by overall MAE, or by angular MAE on turning labels (|angular| >= 0.2)",
     )
+    p.add_argument("--prev-gap", type=int, default=0, choices=[0, 2],
+                   help="2: also feed the frame 2 camera frames earlier (two-frame policy, A7-T)")
     p.add_argument("--experiment", default="", help="Name recorded in metadata, e.g. A/B/C")
     p.add_argument(
         "--frame-stride", type=int, default=1, help="Use every Nth synthetic frame (near-duplicates)"
@@ -287,14 +296,14 @@ def main():
     sim_train = splits["train"] if train_on in {"synthetic", "both"} else []
     loaders = {
         "train": DataLoader(
-            Frames(episodes, sim_train, True, real_train),
+            Frames(episodes, sim_train, True, real_train, a.prev_gap),
             batch_size=a.batch_size,
             shuffle=True,
             num_workers=a.workers,
         ),
         "validation": DataLoader(
             Frames(episodes, splits["validation"] if select_on == "synthetic" else [], False,
-                   real.get("validation", []) if select_on == "real" else []),
+                   real.get("validation", []) if select_on == "real" else [], a.prev_gap),
             batch_size=a.batch_size,
             num_workers=a.workers,
         ),
@@ -303,11 +312,18 @@ def main():
         raise ValueError("Empty training or validation set for the chosen sources")
     if a.real_manifest and select_on == "synthetic":
         loaders["real_validation"] = DataLoader(
-            Frames([], [], False, real["validation"]), batch_size=a.batch_size, num_workers=a.workers
+            Frames([], [], False, real["validation"], a.prev_gap), batch_size=a.batch_size, num_workers=a.workers
         )
-    model = LanePolicy().to(a.device)
+    channels = 6 if a.prev_gap else 3
+    model = LanePolicy(channels).to(a.device)
     if a.init_checkpoint:
-        model.load_state_dict(torch.load(a.init_checkpoint, map_location=a.device))
+        state = torch.load(a.init_checkpoint, map_location=a.device)
+        first = state["net.0.weight"]
+        if first.shape[1] != channels:
+            # Single-image checkpoint into a two-frame model: the earlier frame's filters start
+            # at zero, so training starts from exactly the parent policy.
+            state["net.0.weight"] = torch.cat([first, torch.zeros_like(first)], dim=1)
+        model.load_state_dict(state)
     optimizer = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.weight_decay)
     best_loss, best, history, steps = float("inf"), None, [], 0
     started = time.monotonic()
@@ -346,7 +362,7 @@ def main():
     model.eval()
     torch.onnx.export(
         model,
-        torch.zeros(1, 3, 66, 200),
+        torch.zeros(1, channels, 66, 200),
         str(a.output / "policy.onnx"),
         input_names=["image"],
         output_names=["command"],
@@ -362,7 +378,7 @@ def main():
         history_seeds |= {str(x) for groups in parent["splits"].values() for x in groups}
     history_seeds |= {str(x) for groups in splits.values() for x in groups}
     metadata = dict(
-        preprocess="rgb_bottom_half_yuv_blur3_200x66_chw_div255",
+        preprocess=BASE_CONTRACT + (f"_prev{a.prev_gap}" if a.prev_gap else ""),
         action_space=ACTION_SPACE,
         output="[linear/max_speed_m_s, angular/max_yaw_rad_s] in [-1, 1]",
         max_speed_m_s=max_speed,

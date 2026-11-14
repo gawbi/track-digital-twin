@@ -23,9 +23,16 @@ def parser():
     p.add_argument("--randomize", action="store_true")
     p.add_argument("--stress", action="store_true")
     p.add_argument("--stress-parts", help="Comma list of stress changes to apply (ablation): "
-                   "image,latency,gloss,motor,camera,dynamics; default all")
+                   "image,latency,gloss,motor,camera,dynamics; default all six. Extra (named only): "
+                   "vehicle,camerafx,people (fixed harsh --disturb conditions)")
     p.add_argument("--harsh", action="store_true",
                    help="Training randomization: glare, wide brightness, motor mismatch (needs --randomize)")
+    p.add_argument("--disturb", action="store_true",
+                   help="Training: real-car motor/body effects (start duty, slip, delay, pushes; needs --randomize)")
+    p.add_argument("--teacher-straight-gain", type=float, default=1.0,
+                   help="Teacher speed on straights relative to curves (brakes before curves, labels follow)")
+    p.add_argument("--speed-variation", type=float, nargs=2, metavar=("LO", "HI"),
+                   help="Per-episode speed factor applied to the executed command; labels stay at the base speed")
     p.add_argument("--teacher-speed-scale", type=float, default=1.0,
                    help="Teacher top speed as a fraction of max_speed (real drivers use about half)")
     p.add_argument("--duration", type=float)
@@ -175,7 +182,9 @@ def main():
     if args.stress_parts and not args.stress:
         raise SystemExit("--stress-parts needs --stress")
     parts = args.stress_parts.split(",") if args.stress_parts else None
-    cfg, params = sample_episode(base, args.seed, args.randomize, args.stress, args.harsh, parts)
+    if args.disturb and (args.stress or not args.randomize):
+        raise SystemExit("--disturb is a training randomization: use it with --randomize, not --stress")
+    cfg, params = sample_episode(base, args.seed, args.randomize, args.stress, args.harsh, parts, args.disturb)
     if args.randomize or args.stress:
         randomize_props(cfg, layout, args.seed)
     if args.chase_video:
@@ -219,7 +228,12 @@ def main():
             simcfg["lookahead_m"],
             simcfg["max_speed_m_s"] * args.teacher_speed_scale,
             simcfg["max_yaw_rad_s"],
+            straight_gain=args.teacher_straight_gain,
         )
+        # One speed factor per episode, executed but not labelled: the image cannot tell the
+        # overall speed, so labels keep the base speed (same path = same curvature either way).
+        speed_factor = random.Random(args.seed ^ 0x5EED).uniform(*args.speed_variation) if args.speed_variation else 1.0
+        summary["speed_variation_factor"] = speed_factor
         summary["teacher_speed_scale"] = args.teacher_speed_scale
         progress = Progress(follower.total_length)
         mission_gates = None
@@ -269,7 +283,7 @@ def main():
                 summary["lane_source"] = "privileged teacher (diagnostic only, not autonomy)"
         params["action_noise_rad_s"] = args.action_noise if args.mode == "expert" else 0.0
         # Expert noise and DAgger apply a different command than the recorded label.
-        uses_applied = args.mode == "dagger" or (args.mode == "expert" and args.action_noise > 0)
+        uses_applied = args.mode == "dagger" or (args.mode == "expert" and (args.action_noise > 0 or speed_factor != 1.0))
         noise_rng, noise = random.Random(args.seed ^ 0xD4A7), 0.0
         recorder = Recorder(output, cfg, params, args.mode, args.route, args.record)
         command = (0.0, 0.0)
@@ -308,6 +322,10 @@ def main():
                     applied = expert_v, max(
                         -simcfg["max_yaw_rad_s"], min(simcfg["max_yaw_rad_s"], expert_w + noise)
                     )
+                else:
+                    applied = command
+                applied = applied[0] * speed_factor, applied[1] * speed_factor
+                if uses_applied:
                     follower.record_applied(*applied)
             elif args.mode == "onnx":
                 linear, angular = policy.command(rgb)
@@ -386,6 +404,8 @@ def main():
             summary["status"] = (
                 "duration_completed" if sim.frame >= maximum_frames else "window_closed"
             )
+        if getattr(sim.skid, "actuation", None):
+            summary["disturb_events"] = sim.skid.actuation.events
         summary.update(
             frames=sim.frame,
             distance_m=mission_gates.distance if mission_gates else progress.distance,

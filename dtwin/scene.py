@@ -378,6 +378,7 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
                 )
         props.append({**p, "position": [px, py], "path": path})
     add_room(stage, layout, params, {p["spot"] for p in cfg["props"]})
+    people = add_people(stage, params)
     overhead = None
     if cfg["simulation"].get("overhead_camera"):
         # Display-only top view of the whole mat (below the ceiling lamps); never a
@@ -396,6 +397,7 @@ def build_scene(stage, cfg, layout, params, root, cache, spawn):
         "wheel_drives": wheels,
         "props": props,
         "body_z": body_z,
+        "people": people,
     }
 
 
@@ -447,6 +449,37 @@ def add_room(stage, layout, params, used_spots):
         crown.CreateHeightAttr(rng.uniform(0.08, 0.13))
         transform(crown.GetPrim(), (x, y, 0.1))
         bind(crown.GetPrim(), leaf)
+
+
+def add_people(stage, params):
+    """Person-sized occluders (body cylinder + head) beside the mat; returns their prim paths."""
+    paths = []
+    for i, person in enumerate(params.get("people", [])):
+        path = f"/World/People/Person{i}"
+        root = UsdGeom.Xform.Define(stage, path)
+        transform(root.GetPrim(), (*person["start"], 0))
+        cloth = material(stage, f"/World/Materials/Cloth{i}", (person["shade"],) * 3, 0.9)
+        body = UsdGeom.Cylinder.Define(stage, path + "/Body")
+        body.CreateRadiusAttr(person["radius"])
+        body.CreateHeightAttr(person["height"] - 0.22)
+        transform(body.GetPrim(), (0, 0, (person["height"] - 0.22) / 2))
+        bind(body.GetPrim(), cloth)
+        head = UsdGeom.Sphere.Define(stage, path + "/Head")
+        head.CreateRadiusAttr(0.11)
+        transform(head.GetPrim(), (0, 0, person["height"] - 0.11))
+        bind(head.GetPrim(), cloth)
+        paths.append(path)
+    light = params.get("shadow_light")
+    if light and paths:
+        sun = UsdLux.DistantLight.Define(stage, "/World/ShadowLight")
+        # DistantLight shines along its -Z axis. Gf applies the LEFT rotation first: tilt about Y,
+        # then turn to the azimuth, so light travels from outside (azimuth side) toward the centre.
+        rot = Gf.Rotation(Gf.Vec3d(0, 1, 0), 90 - math.degrees(light["elevation"])) * Gf.Rotation(
+            Gf.Vec3d(0, 0, 1), math.degrees(light["azimuth"]))
+        transform(sun.GetPrim(), (0, 0, 3), rotation=rot.GetQuat())
+        sun.CreateIntensityAttr(light["intensity"])
+        sun.CreateAngleAttr(1.0)  # soft-ish edges like a large lamp
+    return paths
 
 
 def set_signal(stage, props, color):

@@ -28,6 +28,10 @@ def main():
     p.add_argument("--dagger-policy", type=Path, help="collect: policy drives, teacher labels")
     p.add_argument("--policy-speed-scale", type=float, default=1.0, help="evaluate: command scale")
     p.add_argument("--harsh", action="store_true", help="collect: glare/brightness/motor training randomization")
+    p.add_argument("--disturb", action="store_true", help="collect: real-car motor/body effects (stall, slip, pushes)")
+    p.add_argument("--teacher-straight-gain", type=float, default=1.0, help="collect: teacher straight/curve speed ratio")
+    p.add_argument("--speed-variation", type=float, nargs=2, metavar=("LO", "HI"),
+                   help="collect: per-episode executed speed factor (labels unscaled)")
     p.add_argument("--teacher-speed-scale", type=float, default=1.0, help="collect: teacher top speed fraction")
     a = p.parse_args()
     if a.mode == "evaluate" and not a.policy:
@@ -85,7 +89,12 @@ def main():
                 command += ["--policy", str(a.dagger_policy.resolve())]
             if a.harsh:
                 command.append("--harsh")
-            command += ["--teacher-speed-scale", str(a.teacher_speed_scale)]
+            if a.disturb:
+                command.append("--disturb")
+            command += ["--teacher-speed-scale", str(a.teacher_speed_scale),
+                        "--teacher-straight-gain", str(a.teacher_straight_gain)]
+            if a.speed_variation:
+                command += ["--speed-variation", *map(str, a.speed_variation)]
         else:
             command += ["--policy", str(a.policy.resolve())]
             command += ["--policy-speed-scale", str(a.policy_speed_scale)]

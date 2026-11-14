@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .core import ROOT, SkidSteerModel, body_corners, wheel_speeds
+from .core import ROOT, Actuation, SkidSteerModel, body_corners, person_position, wheel_speeds
 
 
 class Simulator:
@@ -57,6 +57,8 @@ class Simulator:
                 params["skid_yaw_efficiency"],
                 params["motor_time_constant_s"],
                 (params["motor_gain_left"], params["motor_gain_right"]),
+                Actuation(params["actuation"], cfg["vehicle"], cfg["simulation"]["max_speed_m_s"], params["seed"])
+                if params.get("actuation") else None,
             )
         self.sm = SimulationManager
         self.legacy = not hasattr(SimulationManager, "setup_simulation")
@@ -228,6 +230,11 @@ class Simulator:
             0,
             255,
         ).astype(np.uint8)
+        if self.params.get("camera_fx"):
+            from .camera_fx import CameraFx
+
+            self.fx = getattr(self, "fx", None) or CameraFx(self.params["camera_fx"])
+            frame = self.fx.apply(frame, self.dt, *getattr(self, "last_motion", (0.0, 0.0)))
         # Delayed RGB and renderer boxes must refer to the SAME captured frame.
         self.delay.append((frame, self.detections(), self.frame * self.dt))
         self.last_boxes = self.delay[0][1]
@@ -302,12 +309,18 @@ class Simulator:
         return {"footprint_on_road": all(v > 0 for v in values), "min_clearance_m": min(values)}
 
     def step(self, linear, angular, count=True, wheel_override=None):
+        self.last_motion = (linear, angular)  # camera motion blur of the next frame
         left, right = wheel_override or wheel_speeds(linear, angular, self.cfg["vehicle"])
         steps = self.cfg["simulation"]["physics_hz"] // self.cfg["simulation"]["camera_hz"]
         if getattr(self, "skid", None):
             for _ in range(steps):
                 self.skid.step(left, right, 1 / self.cfg["simulation"]["physics_hz"])
             self._place_car(*self.skid.pose)
+        for path, person in zip(self.objects.get("people", []), self.params.get("people", [])):
+            if person["speed"]:
+                from .scene import transform
+
+                transform(self.stage.GetPrimAtPath(path), (*person_position(person, self.frame * self.dt), 0))
         for side, drive in self.objects["wheel_drives"]:
             speed = left if side == "left" else right
             gain = self.params["motor_gain_left" if side == "left" else "motor_gain_right"]
@@ -319,10 +332,17 @@ class Simulator:
             self.world.render()
         else:
             self.sm.step(steps=steps)
+            import os
+
             import omni.replicator.core as rep
 
-            # Isaac Sim 6.2: RenderingManager.render() alone leaves annotators empty.
-            rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
+            # Isaac Sim 6.2: annotators fill only through the Replicator orchestrator
+            # (RenderingManager.render() / app.update() leave them empty). delta_time=0 keeps the
+            # timeline from stepping physics a second time (1.4x faster, same frames).
+            # DTWIN_FAST_RENDER=1 (collection only) also skips waiting for the render: 2.9x faster,
+            # but frames arrive about one camera frame late, so evaluations keep it off.
+            fast = os.environ.get("DTWIN_FAST_RENDER") == "1"
+            rep.orchestrator.step(rt_subframes=1, pause_timeline=False, delta_time=0.0, wait_for_render=not fast)
         if count:
             self.frame += 1
 

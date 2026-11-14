@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from dtwin.policy import OnnxPolicy
+from dtwin.policy import OnnxPolicy, previous_image
 
 
 def synthetic_rows(data, metadata, split):
@@ -68,7 +68,11 @@ def main():
         ]
     if not rows:
         p.error("No labeled frames in this split")
-    predictions = np.asarray([policy.action(np.asarray(Image.open(path).convert("RGB"))) for path, _ in rows])
+    load = lambda path: np.asarray(Image.open(path).convert("RGB"))
+    earlier = lambda path: load(path.parent.parent / previous_image(path.parent.parent, path.relative_to(path.parent.parent), policy.gap))
+    predictions = np.asarray([
+        policy.action(load(path), previous_rgb=earlier(path) if policy.gap else None) for path, _ in rows
+    ])
     targets = np.asarray([target for _, target in rows], dtype=float)
     errors = np.abs(predictions - targets)
     # Turns are rare, so the overall mean hides missed curves: report them separately.

@@ -1,6 +1,6 @@
 import unittest
 
-from dtwin.core import PathFollower, Progress, load_inputs, sample_episode, wheel_speeds
+from dtwin.core import STRESS_PARTS, PathFollower, Progress, load_inputs, sample_episode, wheel_speeds
 from dtwin.legacy import gpio_module, gpio_wheels
 from dtwin.missions import MissionController, Observation
 
@@ -53,6 +53,23 @@ class GeometryTests(unittest.TestCase):
         self.assertNotEqual(a, sample_episode(self.cfg, 124, True))
         self.assertEqual(self.cfg["camera"]["z_m"], height)
 
+    def test_teacher_speed_profile_brakes_before_curves_and_accelerates_gradually(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("run_sim", "run_sim.py")
+        rs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rs)
+        f = PathFollower(rs.route_points(self.layout, "outer"), straight_gain=1.25, brake_m=0.3)
+        self.assertEqual(len(f.corner_starts), 4)  # outer loop: four rounded corners
+        first = f.corner_starts[0]
+        f.speed_factor = 1.25
+        self.assertAlmostEqual(f._profile(first - 0.5), 1.25)          # far from the curve
+        self.assertAlmostEqual(f._profile(first - 0.15), 1.125)        # braking ramp
+        self.assertEqual(f._profile(first + 0.05), 1.0)                # inside the curve
+        straight = (first + f.corner_starts[1]) / 2
+        self.assertAlmostEqual(f._profile(straight), 1.0 + 0.5 / 30)   # rises at gain_rise_per_s
+        self.assertEqual(PathFollower(rs.route_points(self.layout, "outer"))._profile(0.3), 1.0)  # off by default
+
     def test_stress_parts_ablation_applies_only_the_named_change(self):
         cfg_all, all_parts = sample_episode(self.cfg, 10000, False, True)
         self.assertEqual((all_parts["motor_gain_left"], all_parts["motor_gain_right"]), (0.75, 1.2))
@@ -67,6 +84,16 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(cfg_cam["camera"]["pitch_down_deg"], cfg_all["camera"]["pitch_down_deg"])
         with self.assertRaises(ValueError):
             sample_episode(self.cfg, 10000, False, True, stress_parts=["weather"])
+
+    def test_extra_stress_parts_are_opt_in_and_keep_the_default_set(self):
+        _, default = sample_episode(self.cfg, 10000, False, True)
+        self.assertNotIn("actuation", default)  # default stress = the original six parts only
+        _, extra = sample_episode(self.cfg, 10000, False, True, stress_parts=["vehicle", "camerafx", "people"])
+        self.assertEqual(extra["actuation"]["start_duty"], [0.33, 0.33])
+        self.assertEqual(len(extra["people"]), 4)
+        self.assertEqual(extra["camera_fx"]["exposure_s"], 0.09)
+        _, six = sample_episode(self.cfg, 10000, False, True, stress_parts=list(STRESS_PARTS))
+        self.assertEqual(six, default)
 
     def test_harsh_training_draws_keep_ordinary_seeds_and_add_glare_lights(self):
         plain_cfg, plain = sample_episode(self.cfg, 123, True)

@@ -4,6 +4,9 @@
     "vehicle_length_m": "측정: 차량치수 사진, 약 25cm",
     "body_width_m": "측정: 약 10cm; 바퀴 포함 전체 폭 16cm",
     "track_width_m": "측정 2026-10-31: 좌우 바퀴 중심 13cm",
+    "randomization_vehicle": "추정 2026-11-14: 학습용(--disturb). 원철님 bench/vehicle.py의 무작위 범위와 harsh 변화(출발 최소 출력 0.26~0.34, 정지 마찰, 출력 포화, 지연 0~150ms, 좌우 속도 ±6%, 쏠림, 흔들림, 배터리 저하, 미끄러운 바닥 구간)에 사용자 요청인 차체 밀치기·순간 헛돎을 더함. duty 변환은 configs/real_car.json(실차 0.33 미만 정지 관찰). turn_eff는 skid_yaw_efficiency에 곱하는 좌·우회전 배율",
+    "randomization_camera_fx": "추정 2026-11-14: 학습용(--disturb). 원철님 bench/realcam.py의 typical~harsh 범위(실제 Pi 사진 약 2,500장의 p5~p95를 넘는 범위 포함)와 bench/disturb.py의 반사·가림·화면 끊김·흐림+황색조. 노출이 길수록 차의 회전·전진으로 모션 블러, 자동노출은 첫 프레임 대비 장면 변화에 늦게 반응",
+    "randomization_people": "추정 2026-11-14: 학습용(--disturb). 실습실에서 트랙 주변에 서 있거나 걷는 사람과 그 그림자(원철님 bench/realcam.py harsh의 고정 그림자·걷는 사람 3명을 렌더링으로 재현). 사람 한 명 뒤쪽 바깥에서 비추는 평행광(고도 45~70도, 그림자 약 0.6~1.7m)으로 그 사람의 그림자가 매트 안쪽 도로 위로 드리워짐",
     "randomization_harsh": "추정 2026-10-31: 학습용(--harsh). 실차 이탈 지점의 매트 반사(사진 IMG_1902/1903), 낮고 먼 광원(창문·먼 조명)의 반사와 가혹 평가(밝기 0.55/1.5, 거칠기 0.08, 좌우 모터 0.75/1.2, 기울기 ±8°, 지연 3)를 덮도록 정함. 가혹 평가 seed는 학습에 쓰지 않음",
     "wheel_radius_m": "측정 2026-10-31: 바퀴 지름 약 6.5cm",
     "wheelbase_m": "측정 2026-10-31: 앞뒤 바퀴 중심 12.5cm",
@@ -58,6 +61,26 @@
       "motor_gain": [0.75, 1.2], "extra_pitch_deg": [-6.0, 6.0],
       "glare_lights": [1, 4], "light_distance_m": [1.3, 1.8], "light_height_m": [0.3, 1.8],
       "light_radius_m": [0.05, 0.3], "light_intensity": [3000.0, 30000.0]
+    },
+    "vehicle": {
+      "start_duty": [0.26, 0.34], "breakaway_duty": [0.0, 0.06], "max_effective_duty": [0.5, 0.66],
+      "delay_s": [0.0, 0.15], "speed_gain": [0.94, 1.06], "turn_eff": [0.8, 1.15], "drift_rad_s": [-0.03, 0.03],
+      "pivot_slide_m_per_rad": [0.0, 0.015], "wander": [0.0, 0.08], "trend_per_min": [-0.06, 0.0],
+      "patches": [0, 6], "patch_speed": [0.75, 1.0], "patch_turn": [0.65, 1.1], "patch_size_m": [0.2, 0.4],
+      "push_per_min": [0.0, 4.0], "push_lateral_m": [0.01, 0.04], "push_yaw_rad": [0.03, 0.15], "push_duration_s": 0.25,
+      "spin_per_min": [0.0, 3.0], "spin_factor": [0.3, 0.8], "spin_duration_s": [0.2, 0.8]
+    },
+    "camera_fx": {
+      "exposure_s": [0.045, 0.11], "focus_sigma": [0.0, 2.4], "haze": [0.0, 0.18], "target_rel": [0.65, 1.35],
+      "ae_tau_s": [0.15, 0.8], "ae_hunt": [0.0, 0.25], "start_gain": [0.2, 1.1], "awb_drift": [0.0, 0.08],
+      "start_magenta": [0.0, 0.6], "vignette": [0.05, 0.35], "magenta_corner": [0.0, 0.3],
+      "read_noise": [1.0, 5.0], "shot_noise": [0.2, 1.0], "warm_blur_probability": 0.2,
+      "glare_per_min": [0.0, 2.0], "occlusion_per_min": [0.0, 1.0], "dropout_per_min": [0.0, 1.0], "flare_per_min": [0.0, 2.0]
+    },
+    "people": {
+      "count": [0, 4], "edge_offset_m": [-0.08, 0.25], "height_m": [1.5, 1.8], "radius_m": [0.15, 0.22],
+      "shade": [0.05, 0.45], "walker_probability": 0.4, "walk_speed_m_s": [0.2, 0.6], "walk_span_m": [0.6, 1.6],
+      "light_elevation_deg": [45.0, 70.0], "light_intensity": [1500.0, 4000.0]
     }
   },
   "missions": {

@@ -217,5 +217,98 @@ class KinematicModelTests(unittest.TestCase):
         self.assertAlmostEqual((model.pose[2] - before) / 0.01, 0.5 * yaw_rate, places=6)
 
 
+class ActuationTests(unittest.TestCase):
+    """Real-car motor effects: stall below start duty, breakaway, saturation, delay, pushes."""
+
+    def setUp(self):
+        from dtwin.core import Actuation, SkidSteerModel
+
+        self.cfg, _ = load_inputs()
+        self.Actuation, self.Skid = Actuation, SkidSteerModel
+        self.base = dict(min_duty=0.175, max_duty=0.66, start_duty=[0.30, 0.30], speed_gain=[1.0, 1.0],
+                         turn_eff=[1.0, 1.0])
+        self.unit = self.cfg["simulation"]["max_speed_m_s"] / self.cfg["vehicle"]["wheel_radius_m"]
+
+    def car(self, seed=0, **params):
+        act = self.Actuation(dict(self.base, **params), self.cfg["vehicle"], self.cfg["simulation"]["max_speed_m_s"], seed)
+        return self.Skid(self.cfg["vehicle"], (0, 0, 0), 0.43, 0.08, actuation=act)
+
+    def drive(self, car, unit_command, seconds=1.0, dt=1 / 120):
+        for _ in range(round(seconds / dt)):
+            car.step(unit_command * self.unit, unit_command * self.unit, dt)
+        return car
+
+    def test_side_below_start_duty_stalls_and_breakaway_needs_more(self):
+        # unit 0.2 -> duty 0.175 + 0.485 * 0.2 = 0.272 < 0.30: no motion
+        self.assertEqual(self.drive(self.car(), 0.2).pose[0], 0.0)
+        self.assertGreater(self.drive(self.car(), 0.4).pose[0], 0.02)  # duty 0.369
+        # breakaway: from standstill 0.369 is not enough when 0.08 extra is needed
+        self.assertEqual(self.drive(self.car(breakaway_duty=0.08), 0.4).pose[0], 0.0)
+
+    def test_saturation_delay_and_determinism(self):
+        free = self.drive(self.car(), 1.0).pose[0]
+        capped = self.drive(self.car(max_effective_duty=0.5), 1.0).pose[0]
+        self.assertLess(capped, free * 0.8)
+        late = self.car(delay_s=0.2)
+        self.drive(late, 1.0, seconds=0.15)
+        self.assertEqual(late.pose[0], 0.0)  # nothing applied before the delay
+        a, b = (self.drive(self.car(seed=3, wander=0.08, push_per_min=60, push_lateral_m=[0.02, 0.03],
+                                    push_yaw_rad=[0.05, 0.1], push_duration_s=0.25), 0.6, seconds=4) for _ in range(2))
+        self.assertEqual(a.pose, b.pose)
+
+    def test_push_moves_the_body_sideways_and_is_logged(self):
+        pushed = self.drive(self.car(seed=1, push_per_min=600, push_lateral_m=[0.03, 0.03],
+                                     push_yaw_rad=[0.0, 0.0], push_duration_s=0.25), 0.6, seconds=1.0)
+        self.assertGreater(abs(pushed.pose[1]), 0.02)  # driving along +x, pushed along y
+        self.assertTrue(any(e["kind"] == "push" for e in pushed.actuation.events))
+
+    def test_disturb_draw_keeps_earlier_parameters_of_the_seed(self):
+        from dtwin.core import sample_episode
+
+        _, plain = sample_episode(self.cfg, 123, True, harsh=True)
+        _, disturbed = sample_episode(self.cfg, 123, True, harsh=True, disturb=True)
+        self.assertNotIn("actuation", plain)
+        added = {"actuation", "camera_fx", "people", "shadow_light"}  # drawn only with --disturb, last
+        self.assertEqual({k: v for k, v in disturbed.items() if k not in added}, plain)
+        self.assertTrue(added <= set(disturbed))
+        v = self.cfg["randomization"]["vehicle"]
+        a = disturbed["actuation"]
+        self.assertTrue(all(v["start_duty"][0] <= s <= v["start_duty"][1] for s in a["start_duty"]))
+        self.assertEqual((a["min_duty"], a["max_duty"]), (0.175, 0.66))
+
+
+
+class CameraFxTests(unittest.TestCase):
+    def setUp(self):
+        import random
+
+        from dtwin.camera_fx import sample_camera_fx
+
+        cfg, _ = load_inputs()
+        self.p = sample_camera_fx(cfg["randomization"]["camera_fx"], random.Random(5))
+        self.p.update(glare_per_min=0, occlusion_per_min=0, dropout_per_min=0, flare_per_min=0,
+                      start_magenta=0, ae_hunt=0, start_gain=1.0, target_rel=1.0, ae_tau_s=0.5)
+
+    def test_deterministic_shape_and_lagging_auto_exposure(self):
+        from dtwin.camera_fx import CameraFx
+
+        dark = np.full((48, 64, 3), 60, np.uint8)
+        a, b = CameraFx(self.p), CameraFx(self.p)
+        np.testing.assert_array_equal(a.apply(dark, 1 / 30, 0.1, 0.5), b.apply(dark, 1 / 30, 0.1, 0.5))
+        out = a.apply(dark, 1 / 30, 0, 0)
+        self.assertEqual((out.shape, out.dtype), (dark.shape, np.uint8))
+        bright = np.full_like(dark, 180)
+        gains = [a.gain] + [(a.apply(bright, 1 / 30, 0, 0), a.gain)[1] for _ in range(30)]
+        self.assertLess(gains[-1], gains[1])                  # exposure comes down for a brighter scene
+        self.assertGreater(gains[1] - gains[-1], gains[0] - gains[1])  # ... gradually, not in one frame
+
+    def test_white_out_burst(self):
+        from dtwin.camera_fx import CameraFx
+
+        fx = CameraFx(dict(self.p, dropout_per_min=6000))
+        out = fx.apply(np.full((48, 64, 3), 60, np.uint8), 1 / 30, 0, 0)
+        self.assertGreater(out.mean(), 230)
+        self.assertEqual(fx.events[0]["kind"], "dropout")
+
 if __name__ == "__main__":
     unittest.main()

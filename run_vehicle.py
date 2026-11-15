@@ -86,11 +86,18 @@ class DetectorWorker:
             self.telemetry.write("detector_error", error=self.error)
 
 
-def make_perceiver(policy, worker=None, mission_max_age_s=0.6):
+def make_perceiver(policy, worker=None, mission_max_age_s=0.6, planner=None):
+    last_ns = [None]
+
     def perceive(frame):
         stages = {}
         action = policy.action(frame.rgb, stages)
         info = {}
+        if planner is not None:
+            dt = 0.0 if last_ns[0] is None else (frame.capture_ns - last_ns[0]) / 1e9
+            last_ns[0] = frame.capture_ns
+            action = planner.step(*action, min(dt, 0.2))  # a long camera gap must not jump the scale
+            info["speed_plan_scale"] = round(planner.scale, 3)
         if worker is not None and worker.missions is not None:
             mission = worker.mission
             age = None if mission is None else (frame.capture_ns - mission["capture_ns"]) / 1e9
@@ -139,6 +146,9 @@ def main():
     p.add_argument("--max-camera-gap", type=float, default=0.3)
     p.add_argument("--max-inference", type=float, default=0.5)
     p.add_argument("--speed-scale", type=float, default=0.6)
+    p.add_argument("--speed-plan", type=float, nargs=2, metavar=("STRAIGHT", "CURVE"),
+                   help="Constant-speed models (A6c on): multiply --speed-scale by STRAIGHT on straights, "
+                   "CURVE in curves (dtwin.actions.SpeedPlanner). Not yet tried on the real car")
     p.add_argument("--threads", type=int, default=2, help="ONNX Runtime intra-op threads")
     p.add_argument("--duration", type=float, default=60)
     p.add_argument("--warmup", type=float, default=3.0, help="Excluded from latency statistics")
@@ -208,7 +218,14 @@ def main():
                 buzzer = DigitalOutputDevice(a.buzzer_pin, initial_value=False)
         worker = DetectorWorker(detector, runtime.frames, telemetry, runtime.clock, missions, buzzer, horn_s)
         worker.thread.start()
-    runtime.perceive = make_perceiver(policy, worker)
+    planner = None
+    if a.speed_plan:
+        from dtwin.actions import SpeedPlanner
+        from dtwin.core import load_inputs
+
+        sim = load_inputs()[0]["simulation"]
+        planner = SpeedPlanner(*a.speed_plan, yaw_per_speed=sim["max_yaw_rad_s"] / sim["max_speed_m_s"])
+    runtime.perceive = make_perceiver(policy, worker, planner=planner)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     try:

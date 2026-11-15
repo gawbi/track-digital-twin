@@ -104,3 +104,29 @@ class DutyMixer:
         left = self._unside(left_duty, self.trim_left)
         right = self._unside(right_duty, self.trim_right)
         return clip_unit((left + right) / 2), clip_unit((right - left) / (2 * self.turn_mix))
+
+
+class SpeedPlanner:
+    """Runtime speed schedule for policies trained on constant-speed labels (A6c on).
+
+    The path curvature the policy asks for (|angular| / linear) picks a scale between
+    ``straight`` (curvature <= lo) and ``curve`` (>= hi); the scale falls at ``brake_per_s``
+    and rises at ``accel_per_s``. Linear and angular are multiplied together, so the
+    path stays the same and only the speed along it changes. ``yaw_per_speed`` converts
+    the caller's units to rad/m (1 for m/s + rad/s, max_yaw/max_speed for normalized).
+    """
+
+    def __init__(self, straight, curve, lo=4.0, hi=8.0, brake_per_s=2.0, accel_per_s=0.4, yaw_per_speed=1.0):
+        if not 0 < curve <= straight or not 0 <= lo < hi or min(brake_per_s, accel_per_s) <= 0:
+            raise ValueError("Invalid speed plan")
+        self.straight, self.curve, self.lo, self.hi = straight, curve, lo, hi
+        self.brake_per_s, self.accel_per_s, self.yaw_per_speed = brake_per_s, accel_per_s, yaw_per_speed
+        self.scale = curve  # start at the curve speed
+
+    def step(self, linear, angular, dt):
+        curvature = abs(angular) * self.yaw_per_speed / max(abs(linear), 1e-3)
+        t = min(1.0, max(0.0, (curvature - self.lo) / (self.hi - self.lo)))
+        target = self.straight + (self.curve - self.straight) * t
+        limit = (self.brake_per_s if target < self.scale else self.accel_per_s) * dt
+        self.scale += max(-limit, min(limit, target - self.scale))
+        return linear * self.scale, angular * self.scale

@@ -27,6 +27,7 @@ def main():
     p.add_argument("--offroad-grace", type=float, help="collect: seconds off road before stopping")
     p.add_argument("--dagger-policy", type=Path, help="collect: policy drives, teacher labels")
     p.add_argument("--policy-speed-scale", type=float, default=1.0, help="evaluate: command scale")
+    p.add_argument("--speed-plan", type=float, nargs=2, metavar=("STRAIGHT", "CURVE"), help="evaluate: SpeedPlanner")
     p.add_argument("--harsh", action="store_true", help="collect: glare/brightness/motor training randomization")
     p.add_argument("--disturb", action="store_true", help="collect: real-car motor/body effects (stall, slip, pushes)")
     p.add_argument("--teacher-straight-gain", type=float, default=1.0, help="collect: teacher straight/curve speed ratio")
@@ -98,6 +99,8 @@ def main():
         else:
             command += ["--policy", str(a.policy.resolve())]
             command += ["--policy-speed-scale", str(a.policy_speed_scale)]
+            if a.speed_plan:
+                command += ["--speed-plan", *map(str, a.speed_plan)]
         if a.stress:
             command.append("--stress")
             if a.stress_parts:

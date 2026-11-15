@@ -45,6 +45,8 @@ def parser():
         help="ONNX mode: scale linear and angular commands together (same path curvature, "
         "more reaction time), like run_vehicle.py --speed-scale",
     )
+    p.add_argument("--speed-plan", type=float, nargs=2, metavar=("STRAIGHT", "CURVE"),
+                   help="ONNX mode: dtwin.actions.SpeedPlanner scales on top of --policy-speed-scale")
     p.add_argument(
         "--chase-video",
         action="store_true",
@@ -254,6 +256,11 @@ def main():
             from dtwin.policy import OnnxPolicy
 
             policy = OnnxPolicy(args.policy)
+            if args.speed_plan:
+                from dtwin.actions import SpeedPlanner
+
+                planner = SpeedPlanner(*args.speed_plan)
+                summary["speed_plan"] = list(args.speed_plan)
         mission_driver = None
         if args.missions:
             from dtwin.autonomy import MissionDriver
@@ -330,6 +337,8 @@ def main():
             elif args.mode == "onnx":
                 linear, angular = policy.command(rgb)
                 command = linear * args.policy_speed_scale, angular * args.policy_speed_scale
+                if args.speed_plan:
+                    command = planner.step(*command, sim.dt)
             elif args.mode == "dagger":
                 # The camera policy drives; the teacher labels every frame and takes
                 # over only when the car drifts, so data covers the policy's own states.

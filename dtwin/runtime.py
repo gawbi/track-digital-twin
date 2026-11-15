@@ -339,8 +339,8 @@ class Simulator:
             # Isaac Sim 6.2: annotators fill only through the Replicator orchestrator
             # (RenderingManager.render() / app.update() leave them empty). delta_time=0 keeps the
             # timeline from stepping physics a second time (1.4x faster, same frames).
-            # DTWIN_FAST_RENDER=1 (collection only) also skips waiting for the render: 2.9x faster,
-            # but frames arrive about one camera frame late, so evaluations keep it off.
+            # DTWIN_FAST_RENDER=1 (collection only) also skips waiting for the render: 2.9x faster;
+            # measured same frame timing, ~3/255 mean pixel difference. Evaluations keep it off.
             fast = os.environ.get("DTWIN_FAST_RENDER") == "1"
             rep.orchestrator.step(rt_subframes=1, pause_timeline=False, delta_time=0.0, wait_for_render=not fast)
         if count:

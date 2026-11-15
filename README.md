@@ -112,8 +112,8 @@ python train_policy.py outputs/train-v5 --real-manifest outputs/real/manifest-10
 python evaluate_lane_offline.py --split validation --real-manifest outputs/real/manifest-1031.json \
     models/lane-v5/policy.onnx                                     # 직선·커브 분리 점수
 
-# Raspberry Pi 5 실차 (모델: Release models-2026-11-01, 절차는 PI_TEST_PROMPT.md)
-wget https://github.com/gawbi/track-digital-twin/releases/download/models-2026-11-01/pi_models_2026-10-31.zip && unzip pi_models_2026-10-31.zip && cp -r pi_models_2026-10-31/models pi_models_2026-10-31/configs .
+# Raspberry Pi 5 실차 (모델: Release models-2026-11-15, 절차는 PI_TEST_PROMPT.md)
+wget https://github.com/gawbi/track-digital-twin/releases/download/models-2026-11-15/pi_models_2026-11-15.zip && unzip pi_models_2026-11-15.zip && cp -r pi_models_2026-11-15/models pi_models_2026-11-15/configs .
 .venv-pi/bin/python run_vehicle.py --policy models/lane-real-C5b/policy.onnx --motors gpio \
     --flip180 --calibration configs/real_car.json --speed-scale 0.5 --duration 180
 ```
@@ -137,5 +137,5 @@ wget https://github.com/gawbi/track-digital-twin/releases/download/models-2026-1
 ## 공개 범위
 
 원본 녹음, 사람이 나온 사진, 실제 주행 영상·사진, 교재 코드, 학습 데이터는 이 공개 저장소에 넣지 않습니다.
-실차용 학습 모델(ONNX)은 저장소 안이 아니라 [Release `models-2026-11-01`](https://github.com/gawbi/track-digital-twin/releases/tag/models-2026-11-01)로 공개합니다.
+실차용 학습 모델(ONNX)은 저장소 안이 아니라 Release로 공개합니다. 최신은 [`models-2026-11-15`](https://github.com/gawbi/track-digital-twin/releases/tag/models-2026-11-15)(A6c, A5b)이고, 이전 A/B/C·C5b는 [`models-2026-11-01`](https://github.com/gawbi/track-digital-twin/releases/tag/models-2026-11-01)에 있습니다.
 README의 장면 이미지는 모두 Isaac Sim 합성 이미지이고, 그래프는 평가 로그의 요약 수치입니다(`tools/make_sim2real_figures.py`).
